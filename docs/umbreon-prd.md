@@ -1,0 +1,56 @@
+- tags:: #Umbreon #PRD #Spec #Dioxus #Android
+- Today's Overview::
+  - 产品目标：打造一个完全为我定制的移动 App，聚合多源 Feed、提供直播/点播体验、支持弹幕、具备内置记忆系统，并可通过远端配置灵活扩展。
+  - 受众：单一用户（我自己）与未来可能加入的少量信任成员。
+  - 约束：优先 Android + Dioxus + Rust 技术栈，保持对原生权限/服务的可访问性。
+- Key Achievements::
+  - 定义 Feed 阅读与时间线体验，覆盖 ATOM、RSSHub、自定义爬虫。
+  - 明确直播/点播播放器需求（m3u/m3u8、Danmaku、外接弹幕源）。
+  - 规划 in-app memory（对接 supermemory.ai）与本地缓存机制。
+  - 设计远端配置方案（GitHub Gist 拉取），驱动 Feed/播放器/记忆策略。
+  - 预留 Android 原生扩展能力（读取 App 列表、推送/提醒）。
+- Key Work Records::
+  - Feed Aggregation & Timeline
+    - 数据源：ATOM/RSS、RSSHub、自定义 crawler JSON；未来可扩展 X、Bilibili、YouTube。
+    - 功能：统一 FeedItem schema，倒序时间线、按来源/标签过滤、富文本/封面展示、下拉刷新与分页。
+    - 配置：每个 Feed 源（URL、认证参数、轮询周期、过滤规则）由远端配置文件定义。
+    - 非功能：离线缓存（SQLite/文件系统）、加载状态与错误提示。
+  - LIVE / VOD Player
+    - LIVE：内置播放器能解析 m3u/m3u8，支持 HLS、低延迟模式。
+    - VOD：远端视频播放，读取 metadata（标题、封面、字幕）。
+    - Danmaku：参考 iina-plus 机制，支持实时弹幕渲染，叠加到播放器。弹幕源可来自外部 WebSocket/HTTP、Bilibili 或自定义文件。
+    - 控制：播放/暂停、倍速、清晰度、弹幕开关、延迟校准。
+  - Danmaku Integration
+    - 支持多协议（JSON 行流、XML、ASS），提供解析层映射到统一 DanmakuEntry。
+    - 允许外挂弹幕：用户指定本地/远端弹幕 URL，播放器加载并与视频时间轴同步。
+    - 可扩展弹幕交互（发送/过滤/主题样式）。
+  - In-App Memory (supermemory.ai)
+    - 与 supermemory.ai 建立同步：记录用户偏好、观看历史、Feed 互动、标记。
+    - 本地缓存策略：SQLite + 加密文件；支持离线读写，网络恢复后同步。
+    - API：`record_memory`, `query_memory`, `tag_memory`, `purge_policy`。
+    - 使用场景：在时间线或播放器中高亮“记忆相关”项、个性化排序、提醒功能。
+  - Remote Config via GitHub Gist
+    - 配置文件内容：feeds、live_streams、vod_sources、danmaku_endpoints、memory_policies、UI 设置。
+    - 机制：App 启动时拉取 Gist → 校验版本 → 更新本地缓存；支持手动刷新与失败降级。
+    - 安全：可选私有 Gist + token；提供快照/回滚。
+  - Android Native Capabilities
+    - 读取应用列表（受限于包可见性/QUERY_ALL_PACKAGES；提供最小权限说明）。
+    - 推送/提醒：本地通知（WorkManager/AlarmManager）+ 远程推送（FCM），结合记忆/Feed 提醒。
+    - 原生桥：Dioxus mobile 插件或 JNI/UniFFI，暴露给 Rust 层。
+- Technical Summary::
+  - 架构
+    - 前端：Dioxus Mobile (Rust) + 原生桥，模块包含 FeedTimeline、PlayerShell、DanmakuOverlay、MemoryClient、ConfigManager。
+    - 后端（可选）：Feed 聚合服务（Go/Rust），负责 connector、归一化、存储、API；可由 App 直连公共源作为初期方案。
+  - 数据流程
+    - ConfigManager → 拉取 Gist → 刷新 Feed/Live 配置。
+    - FeedRepository → 根据配置调 API → 序列化为 FeedItem → Timeline 渲染。
+    - PlayerShell → 根据配置加载流/弹幕 → DanmakuOverlay 渲染 → 用户交互写入 Memory。
+    - MemoryClient → 写入本地 + supermemory → 供 Timeline/Player 查询使用。
+  - 技术栈
+    - Rust crates：dioxus, reqwest, serde, sqlx/sea-orm, moka, jni/uni-ffi, 自定义媒体/弹幕库。
+    - 媒体：可使用原生 ExoPlayer 通过 JNI 控制，或评估 Rust 媒体库（如 gstreamer-rs，需验证移动端支持）。
+    - 配置：GitHub API、ETag 缓存；可引入 `octocrab` / `reqwest`。
+- Notes::
+  - 待决策：播放器实现方式（纯 Rust vs 调用 ExoPlayer）、Danmaku 库选型、后台 Feed 服务是否立即搭建。
+  - 风险：第三方源速率限制、Live/Danmaku 同步延迟、supermemory API 稳定性。
+  - 下一步：基于此 PRD 划分里程碑（Feed MVP → Player+Danmaku → Memory → 原生扩展），并将任务拆分为具体 issue/todo。

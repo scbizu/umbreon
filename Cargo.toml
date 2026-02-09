@@ -1,0 +1,20 @@
+[workspace]
+members = [
+  "apps/umbreon-mobile",
+  "services/feed-aggregator",
+  "workers/cloud-worker",
+  "crates/umbreon-core",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Proprietary"
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
