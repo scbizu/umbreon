@@ -93,23 +93,11 @@ pub struct AppContext {
     pub memory_panel: Signal<MemoryPanelState>,
 }
 
-impl AppContext {
-    pub fn new() -> Self {
-        Self {
-            nav: use_signal(|| NavSection::Timeline),
-            feed_items: use_signal(mock_feed_items),
-            live_streams: use_signal(mock_live_streams),
-            now_playing: use_signal(mock_initial_session),
-            memory_panel: use_signal(mock_memory_panel),
-        }
-    }
-}
-
 pub fn use_app_context() -> AppContext {
     use_context::<AppContext>()
 }
 
-fn mock_feed_items() -> Vec<FeedItem> {
+pub(crate) fn mock_feed_items() -> Vec<FeedItem> {
     vec![
         FeedItem {
             id: "atom-001".into(),
@@ -138,7 +126,7 @@ fn mock_feed_items() -> Vec<FeedItem> {
     ]
 }
 
-fn mock_live_streams() -> Vec<LiveStream> {
+pub(crate) fn mock_live_streams() -> Vec<LiveStream> {
     vec![
         LiveStream {
             id: "live-001".into(),
@@ -155,7 +143,7 @@ fn mock_live_streams() -> Vec<LiveStream> {
     ]
 }
 
-fn mock_initial_session() -> Option<MediaSession> {
+pub(crate) fn mock_initial_session() -> Option<MediaSession> {
     Some(MediaSession {
         title: "Umbreon intro stream".into(),
         source: "Internal LIVE".into(),
@@ -165,7 +153,7 @@ fn mock_initial_session() -> Option<MediaSession> {
     })
 }
 
-fn mock_memory_panel() -> MemoryPanelState {
+pub(crate) fn mock_memory_panel() -> MemoryPanelState {
     MemoryPanelState {
         synced: true,
         last_synced: Some("2026-02-06T08:15:00Z".into()),
