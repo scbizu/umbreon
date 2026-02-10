@@ -1,6 +1,9 @@
 use crate::components::{MemoryPane, NavigationBar, NowPlayingPane, TimelinePane};
 use crate::state::{self, AppContext, FeedItem, FeedSourceKind, NavSection, ThemeMode};
+use crate::storage;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use dioxus::prelude::*;
+use feed_rs::model::FeedType;
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -13,10 +16,11 @@ const BASE_STYLES: &str = r#"
 }
 
 .umbreon-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   background: var(--md-sys-color-background);
   color: var(--md-sys-color-on-background);
+  overflow: hidden;
 }
 
 .umbreon-shell.theme-dark {
@@ -58,6 +62,9 @@ const BASE_STYLES: &str = r#"
   transition: width 0.2s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   flex: 0 0 auto;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
 }
 
 .umbreon-sidebar.collapsed {
@@ -106,6 +113,8 @@ const BASE_STYLES: &str = r#"
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1;
+  overflow: auto;
 }
 
 .nav-btn {
@@ -145,9 +154,12 @@ const BASE_STYLES: &str = r#"
 
 .sidebar-footer {
   margin-top: auto;
+  margin-bottom: 32px;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+}
+
+.sidebar-footer .nav-btn {
+  width: 100%;
 }
 
 .theme-toggle {
@@ -156,15 +168,60 @@ const BASE_STYLES: &str = r#"
   border: 1px solid var(--md-sys-color-outline-variant);
   background: var(--md-sys-color-surface-container);
   color: var(--md-sys-color-on-surface);
-  cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: center;
+  gap: 10px;
 }
 
-.umbreon-sidebar.collapsed .theme-toggle {
-  justify-content: center;
+.theme-icon {
+  font-size: 18px;
+}
+
+.theme-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.theme-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.theme-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--md-sys-color-outline-variant);
+  border-radius: 999px;
+  transition: background 0.2s ease;
+}
+
+.theme-slider::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  top: 3px;
+  background: var(--md-sys-color-surface);
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.theme-switch input:checked + .theme-slider {
+  background: var(--md-sys-color-primary);
+}
+
+.theme-switch input:checked + .theme-slider::before {
+  transform: translateX(20px);
 }
 
 .umbreon-content {
@@ -174,6 +231,8 @@ const BASE_STYLES: &str = r#"
   flex-direction: column;
   gap: 24px;
   min-width: 0;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .now-playing .stream,
@@ -219,6 +278,10 @@ const BASE_STYLES: &str = r#"
   color: var(--md-sys-color-on-surface);
 }
 
+.settings-theme-toggle {
+  justify-content: flex-start;
+}
+
 .settings-sync {
   border: none;
   border-radius: 12px;
@@ -241,16 +304,23 @@ const BASE_STYLES: &str = r#"
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding-right: 6px;
+  width: 100%;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .feed-card {
   display: flex;
+  align-items: flex-start;
   gap: 14px;
   padding: 16px 18px;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
   background: var(--md-sys-color-surface);
   cursor: pointer;
   transition: background 0.2s ease;
+  width: 100%;
 }
 
 .feed-card:hover {
@@ -285,6 +355,9 @@ const BASE_STYLES: &str = r#"
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .post-header {
@@ -292,6 +365,7 @@ const BASE_STYLES: &str = r#"
   align-items: center;
   gap: 6px;
   font-size: 14px;
+  flex-wrap: wrap;
 }
 
 .post-name {
@@ -306,11 +380,37 @@ const BASE_STYLES: &str = r#"
 
 .post-text {
   color: var(--md-sys-color-on-surface);
-  line-height: 1.5;
+  line-height: 1.6;
+  max-width: 100%;
+  max-height: calc(1.6em * 30);
+  overflow: hidden;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  display: block;
+  position: relative;
+}
+
+.post-text::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 32px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), var(--md-sys-color-surface));
+  pointer-events: none;
+}
+
+.post-text * {
+  max-width: 100%;
 }
 
 .post-text p {
   margin: 0 0 8px;
+}
+
+.post-text a {
+  word-break: break-all;
 }
 
 .post-text pre {
@@ -381,10 +481,12 @@ const BASE_STYLES: &str = r#"
   justify-content: center;
   padding: 24px;
   z-index: 1000;
+  overflow: auto;
 }
 
 .feed-modal {
   width: min(720px, 92vw);
+  max-height: calc(100vh - 48px);
   background: var(--md-sys-color-surface);
   border-radius: 20px;
   padding: 24px;
@@ -393,6 +495,7 @@ const BASE_STYLES: &str = r#"
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow: auto;
 }
 
 .feed-modal-header {
@@ -432,6 +535,17 @@ const BASE_STYLES: &str = r#"
 .empty-state {
   color: var(--md-sys-color-on-surface-variant);
 }
+
+.timeline-footer {
+  padding: 8px 0 4px;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  text-align: center;
+}
+
+.timeline-spacer {
+  height: 0;
+}
 "#;
 
 #[derive(Debug, Deserialize)]
@@ -445,6 +559,46 @@ struct FeedConfig {
     url: String,
 }
 
+fn parse_timestamp_atom(value: &str) -> Option<i64> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
+        return Some(dt.timestamp());
+    }
+    if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S %Z") {
+        return Some(dt.timestamp());
+    }
+    if let Some(replaced) = value.strip_suffix(" UTC") {
+        let patched = format!("{} +0000", replaced);
+        if let Ok(dt) = DateTime::parse_from_str(&patched, "%Y-%m-%d %H:%M:%S %z") {
+            return Some(dt.timestamp());
+        }
+    }
+    if let Some(replaced) = value.strip_suffix(" GMT") {
+        let patched = format!("{} +0000", replaced);
+        if let Ok(dt) = DateTime::parse_from_str(&patched, "%Y-%m-%d %H:%M:%S %z") {
+            return Some(dt.timestamp());
+        }
+    }
+    if let Ok(dt) = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S") {
+        return Some(DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc).timestamp());
+    }
+    None
+}
+
+fn parse_timestamp_rss(value: &str) -> Option<i64> {
+    if let Ok(dt) = DateTime::parse_from_rfc2822(value) {
+        return Some(dt.timestamp());
+    }
+    parse_timestamp_atom(value)
+}
+
+fn parse_timestamp_for_feed(feed_type: &FeedType, value: &str) -> Option<i64> {
+    match feed_type {
+        FeedType::Atom => parse_timestamp_atom(value),
+        FeedType::RSS2 => parse_timestamp_rss(value),
+        _ => parse_timestamp_atom(value),
+    }
+}
+
 async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
     let response = reqwest::get(url)
         .await
@@ -452,8 +606,8 @@ async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
         .text()
         .await
         .map_err(|err| format!("failed to read gist: {err}"))?;
-    let config: GistConfig = toml::from_str(&response)
-        .map_err(|err| format!("invalid toml: {err}"))?;
+    let config: GistConfig =
+        toml::from_str(&response).map_err(|err| format!("invalid toml: {err}"))?;
     let feeds = config
         .feeds
         .ok_or_else(|| "no [feeds] section found".to_string())?;
@@ -478,6 +632,7 @@ async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
             .or(parsed.icon.clone())
             .map(|image| image.uri);
         let author = feed.name.clone().unwrap_or_else(|| key.clone());
+        let feed_type = parsed.feed_type;
 
         for entry in parsed.entries {
             let title = entry
@@ -495,11 +650,34 @@ async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
                 .add_tags(["pre", "code", "p", "br"])
                 .clean(&summary)
                 .to_string();
-            let published_at = entry
+            let published_at: String = entry
                 .published
                 .or(entry.updated)
                 .map(|value| value.to_string())
-                .unwrap_or_else(|| "unknown".to_string());
+                .ok_or_else(|| {
+                    format!(
+                        "missing published/updated date in feed {} entry {}",
+                        feed.url,
+                        if entry.id.is_empty() {
+                            title.clone()
+                        } else {
+                            entry.id.clone()
+                        }
+                    )
+                })?;
+            let published_ts =
+                parse_timestamp_for_feed(&feed_type, &published_at).ok_or_else(|| {
+                    format!(
+                        "invalid date '{}' in feed {} entry {}",
+                        published_at,
+                        feed.url,
+                        if entry.id.is_empty() {
+                            title.clone()
+                        } else {
+                            entry.id.clone()
+                        }
+                    )
+                })?;
             let link = entry
                 .links
                 .first()
@@ -518,6 +696,7 @@ async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
                 summary,
                 source: FeedSourceKind::Atom,
                 published_at,
+                published_ts,
                 link,
                 author: author.clone(),
                 avatar_url: avatar_url.clone(),
@@ -529,19 +708,35 @@ async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
         return Err("no feed entries found".to_string());
     }
 
+    items.sort_by(|a, b| b.published_ts.cmp(&a.published_ts));
+
     Ok(items)
 }
 
 #[allow(non_snake_case)]
 pub fn AppRoot() -> Element {
+    let stored_settings = storage::load_settings();
+    let initial_theme = stored_settings.theme.unwrap_or(ThemeMode::Light);
+    let initial_gist_url = stored_settings.gist_url.unwrap_or_else(|| {
+        "https://gist.githubusercontent.com/scbizu/2fea15bd4748c057f01ccec8c2ca2990/raw/66f246525ebafb0bca79c7253e6d45a19eb62e9e/umbreon_app_settings.toml".to_string()
+    });
+    let initial_feed_items = {
+        let cached = storage::load_feed_items();
+        if cached.is_empty() {
+            state::mock_feed_items()
+        } else {
+            cached
+        }
+    };
+
     let nav = use_signal(|| NavSection::Timeline);
-    let theme = use_signal(|| ThemeMode::Dark);
+    let theme = use_signal(|| initial_theme);
     let sidebar_collapsed = use_signal(|| false);
-    let feed_items = use_signal(state::mock_feed_items);
+    let feed_items = use_signal(|| initial_feed_items);
     let live_streams = use_signal(state::mock_live_streams);
     let now_playing = use_signal(state::mock_initial_session);
     let memory_panel = use_signal(state::mock_memory_panel);
-    let gist_url = use_signal(String::new);
+    let gist_url = use_signal(|| initial_gist_url);
     let settings_status = use_signal(|| None::<String>);
 
     let ctx_seed = AppContext {
@@ -569,6 +764,8 @@ pub fn AppRoot() -> Element {
 
     let mut gist_url = ctx.gist_url;
     let mut settings_status = ctx.settings_status;
+    let mut theme = ctx.theme;
+    let mode = *theme.read();
     let feed_items = ctx.feed_items;
 
     rsx! {
@@ -587,7 +784,7 @@ pub fn AppRoot() -> Element {
                     NavSection::Memory => rsx!(MemoryPane {}),
                     NavSection::Settings => rsx!(
                         div { class: "settings-pane",
-                            h2 { "Settings" }
+                            h2 { "设置" }
                             p { "Sync feeds from a remote Gist (TOML)." }
                             div { class: "settings-field",
                                 label { class: "settings-label", "Gist URL" }
@@ -597,14 +794,37 @@ pub fn AppRoot() -> Element {
                                     placeholder: "https://gist.githubusercontent.com/.../config.toml",
                                     value: "{gist_url.read()}",
                                     oninput: move |evt| {
-                                        *gist_url.write() = evt.value();
+                                        let value = evt.value();
+                                        *gist_url.write() = value.clone();
+                                        storage::store_gist_url(&value);
                                     }
+                                }
+                            }
+                            div { class: "settings-field",
+                                label { class: "settings-label", "Theme" }
+                                div { class: "theme-toggle settings-theme-toggle",
+                                    span { class: "material-icons theme-icon", "light_mode" }
+                                    label { class: "theme-switch",
+                                        input {
+                                            r#type: "checkbox",
+                                            checked: mode == ThemeMode::Dark,
+                                            onchange: move |_| {
+                                                let current = *theme.read();
+                                                let next = current.toggle();
+                                                *theme.write() = next;
+                                                storage::store_theme(next);
+                                            }
+                                        }
+                                        span { class: "theme-slider" }
+                                    }
+                                    span { class: "material-icons theme-icon", "dark_mode" }
                                 }
                             }
                             button {
                                 class: "settings-sync",
                                 onclick: move |_| {
                                     let url = gist_url.read().trim().to_string();
+                                    storage::store_gist_url(&url);
                                     if url.is_empty() {
                                         *settings_status.write() = Some("Please enter a Gist URL.".to_string());
                                         return;
@@ -615,8 +835,12 @@ pub fn AppRoot() -> Element {
                                     spawn(async move {
                                         match load_feeds_from_gist(&url).await {
                                             Ok(items) => {
+                                                let mut status = "Feeds updated.".to_string();
+                                                if let Err(err) = storage::store_feed_items(&items) {
+                                                    status = format!("Feeds updated, but cache failed: {err}");
+                                                }
                                                 *feed_items.write() = items;
-                                                *settings_status.write() = Some("Feeds updated.".to_string());
+                                                *settings_status.write() = Some(status);
                                             }
                                             Err(err) => {
                                                 *settings_status.write() = Some(err);

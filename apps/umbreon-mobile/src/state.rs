@@ -7,13 +7,6 @@ pub enum ThemeMode {
 }
 
 impl ThemeMode {
-    pub fn label(&self) -> &'static str {
-        match self {
-            ThemeMode::Light => "Light",
-            ThemeMode::Dark => "Dark",
-        }
-    }
-
     pub fn toggle(&self) -> ThemeMode {
         match self {
             ThemeMode::Light => ThemeMode::Dark,
@@ -42,11 +35,11 @@ impl NavSection {
 
     pub fn label(&self) -> &'static str {
         match self {
-            NavSection::Timeline => "Timeline",
-            NavSection::Live => "Live",
-            NavSection::Vod => "VOD",
-            NavSection::Memory => "Memory",
-            NavSection::Settings => "Settings",
+            NavSection::Timeline => "圈子",
+            NavSection::Live => "直播",
+            NavSection::Vod => "追番",
+            NavSection::Memory => "吾魂",
+            NavSection::Settings => "设置",
         }
     }
 
@@ -75,6 +68,7 @@ pub struct FeedItem {
     pub summary: String,
     pub source: FeedSourceKind,
     pub published_at: String,
+    pub published_ts: i64,
     pub link: String,
     pub author: String,
     pub avatar_url: Option<String>,
@@ -143,9 +137,11 @@ pub(crate) fn mock_feed_items() -> Vec<FeedItem> {
         FeedItem {
             id: "atom-001".into(),
             title: "Rust workspace planning for Umbreon".into(),
-            summary: "Progress log about feed aggregation, danmaku playback, and memory bridge.".into(),
+            summary: "Progress log about feed aggregation, danmaku playback, and memory bridge."
+                .into(),
             source: FeedSourceKind::Atom,
             published_at: "2026-02-05T11:30:00Z".into(),
+            published_ts: 1770271800,
             link: "https://example.com/blog/umbreon-planning".into(),
             author: "Umbreon Blog".into(),
             avatar_url: Some("https://example.com/assets/umbreon-icon.png".into()),
@@ -156,6 +152,7 @@ pub(crate) fn mock_feed_items() -> Vec<FeedItem> {
             summary: "Auto-subscribed via RSSHub, includes danmaku endpoints.".into(),
             source: FeedSourceKind::RssHub,
             published_at: "2026-02-05T08:25:00Z".into(),
+            published_ts: 1770260700,
             link: "https://rsshub.app/bilibili/live".into(),
             author: "RSSHub".into(),
             avatar_url: Some("https://rsshub.app/logo.png".into()),
@@ -166,6 +163,7 @@ pub(crate) fn mock_feed_items() -> Vec<FeedItem> {
             summary: "CloudWorker parsed playlist.m3u + metadata injection.".into(),
             source: FeedSourceKind::Custom,
             published_at: "2026-02-04T21:03:00Z".into(),
+            published_ts: 1770200580,
             link: "https://gist.github.com/umbreon/vod".into(),
             author: "Umbreon Crawler".into(),
             avatar_url: None,

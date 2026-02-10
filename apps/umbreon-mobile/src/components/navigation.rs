@@ -5,9 +5,7 @@ use dioxus::prelude::*;
 pub fn NavigationBar() -> Element {
     let ctx = use_app_context();
     let nav = ctx.nav;
-    let mut theme = ctx.theme;
     let active = *nav.read();
-    let mode = *theme.read();
 
     let mut sidebar = ctx.sidebar_collapsed;
     let collapsed = *sidebar.read();
@@ -29,19 +27,12 @@ pub fn NavigationBar() -> Element {
                 }
             }
             nav { class: "umbreon-nav",
-                for section in NavSection::ALL.into_iter() {
+                for section in NavSection::ALL.into_iter().filter(|section| *section != NavSection::Settings) {
                     NavButton { section, active, nav }
                 }
             }
             div { class: "sidebar-footer",
-                button {
-                    class: "theme-toggle",
-                    onclick: move |_| {
-                        let current = *theme.read();
-                        *theme.write() = current.toggle();
-                    },
-                    span { class: "theme-toggle-text", "Theme: {mode.label()}" }
-                }
+                NavButton { section: NavSection::Settings, active, nav }
             }
         }
     }

@@ -1,20 +1,151 @@
-use crate::state::{use_app_context, FeedItem, FeedSourceKind};
+use crate::state::{FeedItem, FeedSourceKind, use_app_context};
 use dioxus::prelude::*;
 use tracing::info;
 use url::Url;
 
+const TIMELINE_ID: &str = "timeline-pane";
+
+#[cfg(target_arch = "wasm32")]
+fn get_timeline_element() -> Option<web_sys::Element> {
+    let window = web_sys::window()?;
+    let document = window.document()?;
+    document.get_element_by_id(TIMELINE_ID)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_scroll_metrics() -> Option<(f64, f64)> {
+    let element = get_timeline_element()?;
+    let scroll_top = element.scroll_top() as f64;
+    let client_height = element.client_height() as f64;
+    Some((scroll_top, client_height))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn measure_card_height() -> Option<f64> {
+    let window = web_sys::window()?;
+    let document = window.document()?;
+    let card = document.query_selector(".feed-card").ok()??;
+    Some(card.get_bounding_client_rect().height())
+}
+
 #[allow(non_snake_case)]
 pub fn TimelinePane() -> Element {
     let ctx = use_app_context();
-    let items = ctx.feed_items.read().clone();
+    let mut items = ctx.feed_items.read().clone();
+    items.sort_by(|a, b| b.published_ts.cmp(&a.published_ts));
+    let total = items.len();
     let mut selected = use_signal(|| None::<FeedItem>);
 
+    #[cfg(target_arch = "wasm32")]
+    let timeline_body = render_virtual_timeline(items, total, selected);
+    #[cfg(not(target_arch = "wasm32"))]
+    let timeline_body = render_paginated_timeline(items, total, selected);
+
     rsx! {
-        section { class: "timeline-pane",
-            if items.is_empty() {
+        {timeline_body}
+        if let Some(entry) = selected.read().clone() {
+            FeedModal {
+                item: entry,
+                on_close: move |_| {
+                    *selected.write() = None;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn render_virtual_timeline(
+    items: Vec<FeedItem>,
+    total: usize,
+    mut selected: Signal<Option<FeedItem>>,
+) -> Element {
+    let mut start_index = use_signal(|| 0usize);
+    let mut viewport_height = use_signal(|| 600.0f64);
+    let mut item_height = use_signal(|| 720.0f64);
+
+    use_effect(move || {
+        if let Some(height) = measure_card_height() {
+            if (height - *item_height.read()).abs() > 1.0 {
+                *item_height.write() = height.max(1.0);
+            }
+        }
+    });
+
+    let visible_count = ((*viewport_height.read() / *item_height.read()).ceil() as usize)
+        .saturating_add(OVERSCAN * 2)
+        .max(1);
+    let start = (*start_index.read()).min(total);
+    let end = (start + visible_count).min(total);
+    let slice = items
+        .into_iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect::<Vec<_>>();
+    let top_spacer = (start as f64) * *item_height.read();
+    let bottom_spacer = ((total - end) as f64) * *item_height.read();
+
+    rsx! {
+        section {
+            id: "{TIMELINE_ID}",
+            class: "timeline-pane",
+            onscroll: move |_| {
+                if let Some((scroll_top, client_height)) = read_scroll_metrics() {
+                    let height = *item_height.read();
+                    let next_start = (scroll_top / height).floor() as usize;
+                    let next_start = next_start.saturating_sub(OVERSCAN);
+                    *start_index.write() = next_start.min(total);
+                    *viewport_height.write() = client_height;
+                }
+            },
+            if slice.is_empty() {
                 p { class: "empty-state", "No feed entries yet. Configure sources via GitHub Gist." }
             } else {
-                for item in items.into_iter() {
+                div { class: "timeline-spacer", style: "height: {top_spacer}px" }
+                for item in slice.into_iter() {
+                    FeedCard {
+                        item: item.clone(),
+                        on_open: move |card| {
+                            *selected.write() = Some(card);
+                        }
+                    }
+                }
+                div { class: "timeline-spacer", style: "height: {bottom_spacer}px" }
+            }
+            div { class: "timeline-footer",
+                span { "Showing {end} / {total} feeds" }
+            }
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn render_paginated_timeline(
+    items: Vec<FeedItem>,
+    total: usize,
+    mut selected: Signal<Option<FeedItem>>,
+) -> Element {
+    let mut visible = use_signal(|| 30usize);
+    if *visible.read() > total {
+        *visible.write() = total;
+    }
+    let slice = items.into_iter().take(*visible.read()).collect::<Vec<_>>();
+
+    rsx! {
+        section {
+            id: "{TIMELINE_ID}",
+            class: "timeline-pane",
+            onscroll: move |_| {
+                let current = *visible.read();
+                if current < total {
+                    let next = (current + 30).min(total);
+                    *visible.write() = next;
+                }
+            },
+            if slice.is_empty() {
+                p { class: "empty-state", "No feed entries yet. Configure sources via GitHub Gist." }
+            } else {
+                for item in slice.into_iter() {
                     FeedCard {
                         item: item.clone(),
                         on_open: move |card| {
@@ -23,13 +154,8 @@ pub fn TimelinePane() -> Element {
                     }
                 }
             }
-        }
-        if let Some(entry) = selected.read().clone() {
-            FeedModal {
-                item: entry,
-                on_close: move |_| {
-                    *selected.write() = None;
-                }
+            div { class: "timeline-footer",
+                span { "Loaded {visible.read()} / {total} feeds" }
             }
         }
     }
@@ -87,7 +213,7 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
                             evt.stop_propagation();
                         },
                         span { class: "material-icons", "open_in_new" }
-                        span { "Read more" }
+                        span { "唤魂" }
                     }
                     button {
                         class: "post-action",
@@ -96,7 +222,7 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
                             info!("add to memory: {}", item.id);
                         },
                         span { class: "material-icons", "bookmark_add" }
-                        span { "Add to memory" }
+                        span { "入魂" }
                     }
                 }
             }

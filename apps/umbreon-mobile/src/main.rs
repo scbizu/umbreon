@@ -1,6 +1,7 @@
 mod app;
 mod components;
 mod state;
+mod storage;
 
 use app::AppRoot;
 use dioxus_mobile::{launch::launch, Config};
