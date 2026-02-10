@@ -2,20 +2,29 @@ use crate::state::{use_app_context, LiveStream, MediaKind, MediaSession};
 use dioxus::prelude::*;
 
 #[allow(non_snake_case)]
-pub fn NowPlayingPane() -> Element {
+#[component]
+pub fn NowPlayingPane(mode: MediaKind) -> Element {
     let ctx = use_app_context();
     let now_playing = ctx.now_playing.read().clone();
     let live_streams = ctx.live_streams.read().clone();
+    let title = match mode {
+        MediaKind::Live => "Live",
+        MediaKind::Vod => "VOD",
+    };
 
     rsx! {
         section { class: "player-pane",
-            header { h2 { "Media" } }
+            header { h2 { "{title}" } }
             if let Some(session) = now_playing {
                 NowPlayingCard { session }
             } else {
                 p { class: "empty-state", "Select a stream or VOD to get started." }
             }
-            LiveStreamList { streams: live_streams }
+            if mode == MediaKind::Live {
+                LiveStreamList { streams: live_streams }
+            } else {
+                p { class: "empty-state", "VOD library is empty. Add sources in your config." }
+            }
         }
     }
 }

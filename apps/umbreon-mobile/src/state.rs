@@ -1,19 +1,43 @@
 use dioxus::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThemeMode {
+    Light,
+    Dark,
+}
+
+impl ThemeMode {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ThemeMode::Light => "Light",
+            ThemeMode::Dark => "Dark",
+        }
+    }
+
+    pub fn toggle(&self) -> ThemeMode {
+        match self {
+            ThemeMode::Light => ThemeMode::Dark,
+            ThemeMode::Dark => ThemeMode::Light,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavSection {
     Timeline,
     Live,
     Vod,
     Memory,
+    Settings,
 }
 
 impl NavSection {
-    pub const ALL: [NavSection; 4] = [
+    pub const ALL: [NavSection; 5] = [
         NavSection::Timeline,
         NavSection::Live,
         NavSection::Vod,
         NavSection::Memory,
+        NavSection::Settings,
     ];
 
     pub fn label(&self) -> &'static str {
@@ -22,6 +46,17 @@ impl NavSection {
             NavSection::Live => "Live",
             NavSection::Vod => "VOD",
             NavSection::Memory => "Memory",
+            NavSection::Settings => "Settings",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            NavSection::Timeline => "article",
+            NavSection::Live => "live_tv",
+            NavSection::Vod => "movie",
+            NavSection::Memory => "memory",
+            NavSection::Settings => "settings",
         }
     }
 }
@@ -41,6 +76,8 @@ pub struct FeedItem {
     pub source: FeedSourceKind,
     pub published_at: String,
     pub link: String,
+    pub author: String,
+    pub avatar_url: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -87,10 +124,14 @@ impl Default for MemoryPanelState {
 #[derive(Clone)]
 pub struct AppContext {
     pub nav: Signal<NavSection>,
+    pub theme: Signal<ThemeMode>,
+    pub sidebar_collapsed: Signal<bool>,
     pub feed_items: Signal<Vec<FeedItem>>,
     pub live_streams: Signal<Vec<LiveStream>>,
     pub now_playing: Signal<Option<MediaSession>>,
     pub memory_panel: Signal<MemoryPanelState>,
+    pub gist_url: Signal<String>,
+    pub settings_status: Signal<Option<String>>,
 }
 
 pub fn use_app_context() -> AppContext {
@@ -106,6 +147,8 @@ pub(crate) fn mock_feed_items() -> Vec<FeedItem> {
             source: FeedSourceKind::Atom,
             published_at: "2026-02-05T11:30:00Z".into(),
             link: "https://example.com/blog/umbreon-planning".into(),
+            author: "Umbreon Blog".into(),
+            avatar_url: Some("https://example.com/assets/umbreon-icon.png".into()),
         },
         FeedItem {
             id: "rsshub-fox-001".into(),
@@ -114,6 +157,8 @@ pub(crate) fn mock_feed_items() -> Vec<FeedItem> {
             source: FeedSourceKind::RssHub,
             published_at: "2026-02-05T08:25:00Z".into(),
             link: "https://rsshub.app/bilibili/live".into(),
+            author: "RSSHub".into(),
+            avatar_url: Some("https://rsshub.app/logo.png".into()),
         },
         FeedItem {
             id: "custom-yt-042".into(),
@@ -122,6 +167,8 @@ pub(crate) fn mock_feed_items() -> Vec<FeedItem> {
             source: FeedSourceKind::Custom,
             published_at: "2026-02-04T21:03:00Z".into(),
             link: "https://gist.github.com/umbreon/vod".into(),
+            author: "Umbreon Crawler".into(),
+            avatar_url: None,
         },
     ]
 }
