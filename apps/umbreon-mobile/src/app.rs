@@ -311,20 +311,26 @@ const BASE_STYLES: &str = r#"
   min-height: 0;
 }
 
+.timeline-pane > * {
+  flex-shrink: 0;
+}
+
 .feed-card {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 14px;
   padding: 16px 18px;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  background: var(--md-sys-color-surface);
+  background-color: var(--md-sys-color-surface);
   cursor: pointer;
   transition: background 0.2s ease;
   width: 100%;
+  overflow: hidden;
 }
 
 .feed-card:hover {
-  background: var(--md-sys-color-surface-container);
+  background-color: var(--md-sys-color-surface-container);
 }
 
 .feed-card:last-child {
@@ -366,6 +372,29 @@ const BASE_STYLES: &str = r#"
   gap: 6px;
   font-size: 14px;
   flex-wrap: wrap;
+}
+
+.feed-lang-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(158, 195, 255, 0.18);
+  color: var(--md-sys-color-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.feed-lang-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.feed-lang-label {
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .post-name {
@@ -557,6 +586,7 @@ struct GistConfig {
 struct FeedConfig {
     name: Option<String>,
     url: String,
+    tags: Option<Vec<String>>,
 }
 
 fn parse_timestamp_atom(value: &str) -> Option<i64> {
@@ -633,6 +663,7 @@ async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
             .map(|image| image.uri);
         let author = feed.name.clone().unwrap_or_else(|| key.clone());
         let feed_type = parsed.feed_type;
+        let feed_tags = feed.tags.clone().unwrap_or_default();
 
         for entry in parsed.entries {
             let title = entry
@@ -652,8 +683,9 @@ async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
                 .to_string();
             let published_at: String = entry
                 .published
-                .or(entry.updated)
-                .map(|value| value.to_string())
+                .as_ref()
+                .map(ToString::to_string)
+                .or_else(|| entry.updated.as_ref().map(ToString::to_string))
                 .ok_or_else(|| {
                     format!(
                         "missing published/updated date in feed {} entry {}",
@@ -700,6 +732,7 @@ async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
                 link,
                 author: author.clone(),
                 avatar_url: avatar_url.clone(),
+                tags: feed_tags.clone(),
             });
         }
     }
@@ -713,6 +746,33 @@ async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
     Ok(items)
 }
 
+fn trigger_feed_sync(
+    url: String,
+    mut feed_items: Signal<Vec<FeedItem>>,
+    mut settings_status: Signal<Option<String>>,
+) {
+    if url.is_empty() {
+        *settings_status.write() = Some("Please enter a Gist URL.".to_string());
+        return;
+    }
+    *settings_status.write() = Some("Syncing feeds...".to_string());
+    spawn(async move {
+        match load_feeds_from_gist(&url).await {
+            Ok(items) => {
+                let mut status = "Feeds updated.".to_string();
+                if let Err(err) = storage::store_feed_items(&items) {
+                    status = format!("Feeds updated, but cache failed: {err}");
+                }
+                *feed_items.write() = items;
+                *settings_status.write() = Some(status);
+            }
+            Err(err) => {
+                *settings_status.write() = Some(err);
+            }
+        }
+    });
+}
+
 #[allow(non_snake_case)]
 pub fn AppRoot() -> Element {
     let stored_settings = storage::load_settings();
@@ -723,13 +783,17 @@ pub fn AppRoot() -> Element {
     let initial_memory_server_url = stored_settings
         .memory_server_url
         .unwrap_or_else(|| "http://localhost:8787".to_string());
-    let initial_feed_items = {
-        let cached = storage::load_feed_items();
-        if cached.is_empty() {
-            state::mock_feed_items()
-        } else {
-            cached
-        }
+    let cached_feed_items = storage::load_feed_items();
+    let should_auto_sync_stale_cache = !cached_feed_items.is_empty()
+        && !cached_feed_items.iter().any(|item| {
+            item.tags
+                .iter()
+                .any(|tag| tag.trim_start().starts_with("StackLang:"))
+        });
+    let initial_feed_items = if cached_feed_items.is_empty() {
+        state::mock_feed_items()
+    } else {
+        cached_feed_items
     };
 
     let nav = use_signal(|| NavSection::Timeline);
@@ -769,10 +833,20 @@ pub fn AppRoot() -> Element {
 
     let mut gist_url = ctx.gist_url;
     let mut memory_server_url = ctx.memory_server_url;
-    let mut settings_status = ctx.settings_status;
+    let settings_status = ctx.settings_status;
     let mut theme = ctx.theme;
     let mode = *theme.read();
     let feed_items = ctx.feed_items;
+    let mut auto_sync_once = use_signal(|| false);
+
+    use_effect(move || {
+        if *auto_sync_once.read() || !should_auto_sync_stale_cache {
+            return;
+        }
+        *auto_sync_once.write() = true;
+        let url = gist_url.read().trim().to_string();
+        trigger_feed_sync(url, feed_items.clone(), settings_status.clone());
+    });
 
     rsx! {
         link {
@@ -804,6 +878,18 @@ pub fn AppRoot() -> Element {
                                         *gist_url.write() = value.clone();
                                         storage::store_gist_url(&value);
                                     }
+                                }
+                                button {
+                                    class: "settings-sync",
+                                    onclick: move |_| {
+                                        let url = gist_url.read().trim().to_string();
+                                        let memory_url = memory_server_url.read().trim().to_string();
+                                        storage::store_gist_url(&url);
+                                        storage::store_memory_server_url(&memory_url);
+                                        trigger_feed_sync(url, feed_items.clone(), settings_status.clone());
+                                    },
+                                    span { class: "material-icons", "sync" }
+                                    span { "Sync feeds" }
                                 }
                             }
                             div { class: "settings-field",
@@ -839,39 +925,6 @@ pub fn AppRoot() -> Element {
                                     }
                                     span { class: "material-icons theme-icon", "dark_mode" }
                                 }
-                            }
-                            button {
-                                class: "settings-sync",
-                                onclick: move |_| {
-                                    let url = gist_url.read().trim().to_string();
-                                    let memory_url = memory_server_url.read().trim().to_string();
-                                    storage::store_gist_url(&url);
-                                    storage::store_memory_server_url(&memory_url);
-                                    if url.is_empty() {
-                                        *settings_status.write() = Some("Please enter a Gist URL.".to_string());
-                                        return;
-                                    }
-                                    *settings_status.write() = Some("Syncing feeds...".to_string());
-                                    let mut feed_items = feed_items.clone();
-                                    let mut settings_status = settings_status.clone();
-                                    spawn(async move {
-                                        match load_feeds_from_gist(&url).await {
-                                            Ok(items) => {
-                                                let mut status = "Feeds updated.".to_string();
-                                                if let Err(err) = storage::store_feed_items(&items) {
-                                                    status = format!("Feeds updated, but cache failed: {err}");
-                                                }
-                                                *feed_items.write() = items;
-                                                *settings_status.write() = Some(status);
-                                            }
-                                            Err(err) => {
-                                                *settings_status.write() = Some(err);
-                                            }
-                                        }
-                                    });
-                                },
-                                span { class: "material-icons", "sync" }
-                                span { "Sync feeds" }
                             }
                             if let Some(message) = settings_status.read().clone() {
                                 p { class: "settings-status", "{message}" }

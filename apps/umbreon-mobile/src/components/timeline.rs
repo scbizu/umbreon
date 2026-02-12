@@ -5,6 +5,41 @@ use url::Url;
 
 const TIMELINE_ID: &str = "timeline-pane";
 
+struct StackLangStamp {
+    label: String,
+    icon_url: Option<String>,
+}
+
+fn stacklang_stamp(tags: &[String]) -> Option<StackLangStamp> {
+    let tag = tags.iter().find_map(|raw| {
+        let trimmed = raw.trim();
+        trimmed
+            .strip_prefix("StackLang:")
+            .or_else(|| trimmed.strip_prefix("stacklang:"))
+            .map(|value| value.trim().to_string())
+    })?;
+
+    let mut icon_key = tag.trim().to_lowercase();
+    if icon_key == "golang" {
+        icon_key = "go".to_string();
+    }
+    let icon_url = if icon_key.is_empty() {
+        None
+    } else if icon_key == "rust" {
+        Some("https://cdn.jsdelivr.net/gh/devicons/devicon/icons/rust/rust-plain.svg".to_string())
+    } else {
+        Some(format!(
+            "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/{0}/{0}-original.svg",
+            icon_key
+        ))
+    };
+
+    Some(StackLangStamp {
+        label: tag,
+        icon_url,
+    })
+}
+
 #[cfg(target_arch = "wasm32")]
 fn get_timeline_element() -> Option<web_sys::Element> {
     let window = web_sys::window()?;
@@ -171,11 +206,12 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
 
     let card_item = item.clone();
     let fallback = item.author.chars().next().unwrap_or('?');
-    let host = Url::parse(&item.link)
+    let host: String = Url::parse(item.link.as_str())
         .ok()
-        .and_then(|url| url.host_str().map(|value| value.to_string()))
+        .and_then(|url| url.host_str().map(str::to_owned))
         .unwrap_or_else(|| "source".to_string());
 
+    let stamp = stacklang_stamp(&item.tags);
     rsx! {
         article {
             class: "feed-card",
@@ -196,6 +232,14 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
                     span { class: "post-handle", "@{host}" }
                     span { class: "post-dot", "·" }
                     time { class: "post-time", "{item.published_at}" }
+                    if let Some(stamp) = stamp.as_ref() {
+                        span { class: "feed-lang-badge",
+                            if let Some(icon) = stamp.icon_url.as_ref() {
+                                img { class: "feed-lang-icon", src: "{icon}", alt: "{stamp.label}" }
+                            }
+                            span { class: "feed-lang-label", "{stamp.label}" }
+                        }
+                    }
                 }
                 div { class: "post-text", dangerous_inner_html: "{item.summary}" }
                 if !item.title.is_empty() {

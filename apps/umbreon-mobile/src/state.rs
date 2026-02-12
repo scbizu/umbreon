@@ -72,6 +72,7 @@ pub struct FeedItem {
     pub link: String,
     pub author: String,
     pub avatar_url: Option<String>,
+    pub tags: Vec<String>,
 }
 
 #[allow(dead_code)]
@@ -146,6 +147,7 @@ pub(crate) fn mock_feed_items() -> Vec<FeedItem> {
             link: "https://example.com/blog/umbreon-planning".into(),
             author: "Umbreon Blog".into(),
             avatar_url: Some("https://example.com/assets/umbreon-icon.png".into()),
+            tags: vec!["StackLang:Rust".into(), "#umbreon".into()],
         },
         FeedItem {
             id: "rsshub-fox-001".into(),
@@ -157,6 +159,7 @@ pub(crate) fn mock_feed_items() -> Vec<FeedItem> {
             link: "https://rsshub.app/bilibili/live".into(),
             author: "RSSHub".into(),
             avatar_url: Some("https://rsshub.app/logo.png".into()),
+            tags: vec!["#rss".into()],
         },
         FeedItem {
             id: "custom-yt-042".into(),
@@ -168,6 +171,7 @@ pub(crate) fn mock_feed_items() -> Vec<FeedItem> {
             link: "https://gist.github.com/umbreon/vod".into(),
             author: "Umbreon Crawler".into(),
             avatar_url: None,
+            tags: vec!["StackLang:Go".into(), "#crawler".into()],
         },
     ]
 }

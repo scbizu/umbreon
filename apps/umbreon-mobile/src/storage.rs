@@ -30,8 +30,9 @@ mod imp {
     fn open_db() -> Result<Connection, rusqlite::Error> {
         let conn = Connection::open(db_path())?;
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS settings (\n                key TEXT PRIMARY KEY,\n                value TEXT NOT NULL\n            );\n            CREATE TABLE IF NOT EXISTS feeds (\n                id TEXT PRIMARY KEY,\n                title TEXT NOT NULL,\n                summary TEXT NOT NULL,\n                source TEXT NOT NULL,\n                published_at TEXT NOT NULL,\n                published_ts INTEGER NOT NULL,\n                link TEXT NOT NULL,\n                author TEXT NOT NULL,\n                avatar_url TEXT\n            );",
+            "CREATE TABLE IF NOT EXISTS settings (\n                key TEXT PRIMARY KEY,\n                value TEXT NOT NULL\n            );\n            CREATE TABLE IF NOT EXISTS feeds (\n                id TEXT PRIMARY KEY,\n                title TEXT NOT NULL,\n                summary TEXT NOT NULL,\n                source TEXT NOT NULL,\n                published_at TEXT NOT NULL,\n                published_ts INTEGER NOT NULL,\n                link TEXT NOT NULL,\n                author TEXT NOT NULL,\n                avatar_url TEXT,\n                tags TEXT\n            );",
         )?;
+        let _ = conn.execute("ALTER TABLE feeds ADD COLUMN tags TEXT", []);
         Ok(conn)
     }
 
@@ -122,12 +123,19 @@ mod imp {
             return Vec::new();
         };
         let Ok(mut stmt) = conn.prepare(
-            "SELECT id, title, summary, source, published_at, published_ts, link, author, avatar_url\n            FROM feeds\n            ORDER BY published_ts DESC",
+            "SELECT id, title, summary, source, published_at, published_ts, link, author, avatar_url, tags\n            FROM feeds\n            ORDER BY published_ts DESC",
         ) else {
             return Vec::new();
         };
         let Ok(rows) = stmt.query_map([], |row| {
             let source: String = row.get(3)?;
+            let tags_raw: Option<String> = row.get(9)?;
+            let tags = tags_raw
+                .unwrap_or_default()
+                .split(',')
+                .map(|tag| tag.trim().to_string())
+                .filter(|tag| !tag.is_empty())
+                .collect::<Vec<_>>();
             Ok(FeedItem {
                 id: row.get(0)?,
                 title: row.get(1)?,
@@ -138,6 +146,7 @@ mod imp {
                 link: row.get(6)?,
                 author: row.get(7)?,
                 avatar_url: row.get(8)?,
+                tags,
             })
         }) else {
             return Vec::new();
@@ -155,10 +164,11 @@ mod imp {
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO feeds (id, title, summary, source, published_at, published_ts, link, author, avatar_url)\n                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    "INSERT INTO feeds (id, title, summary, source, published_at, published_ts, link, author, avatar_url, tags)\n                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 )
                 .map_err(|err| format!("prepare insert failed: {err}"))?;
             for item in items {
+                let tags = item.tags.join(",");
                 stmt.execute(params![
                     item.id,
                     item.title,
@@ -169,6 +179,7 @@ mod imp {
                     item.link,
                     item.author,
                     item.avatar_url,
+                    tags,
                 ])
                 .map_err(|err| format!("insert feed failed: {err}"))?;
             }
