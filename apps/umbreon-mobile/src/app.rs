@@ -4,8 +4,6 @@ use crate::storage;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use dioxus::prelude::*;
 use feed_rs::model::FeedType;
-use serde::Deserialize;
-use std::collections::HashMap;
 
 const BASE_STYLES: &str = r#"
 @import url("https://fonts.googleapis.com/icon?family=Material+Icons");
@@ -577,18 +575,6 @@ const BASE_STYLES: &str = r#"
 }
 "#;
 
-#[derive(Debug, Deserialize)]
-struct GistConfig {
-    feeds: Option<HashMap<String, FeedConfig>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct FeedConfig {
-    name: Option<String>,
-    url: String,
-    tags: Option<Vec<String>>,
-}
-
 fn parse_timestamp_atom(value: &str) -> Option<i64> {
     if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
         return Some(dt.timestamp());
@@ -618,123 +604,185 @@ fn parse_timestamp_rss(value: &str) -> Option<i64> {
     if let Ok(dt) = DateTime::parse_from_rfc2822(value) {
         return Some(dt.timestamp());
     }
-    parse_timestamp_atom(value)
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+        let dt = date.and_hms_opt(0, 0, 0)?;
+        return Some(DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc).timestamp());
+    }
+    if let Some(replaced) = value.strip_suffix(" UTC") {
+        let patched = format!("{} +0000", replaced);
+        if let Ok(dt) = DateTime::parse_from_str(&patched, "%Y-%m-%d %H:%M:%S %z") {
+            return Some(dt.timestamp());
+        }
+    }
+    if let Ok(dt) = DateTime::parse_from_str(value, "%a, %d %b %Y %H:%M:%S %Z") {
+        return Some(dt.timestamp());
+    }
+    if let Ok(dt) = DateTime::parse_from_str(value, "%a, %d %b %Y %H:%M %Z") {
+        return Some(dt.timestamp());
+    }
+    None
 }
 
 fn parse_timestamp_for_feed(feed_type: &FeedType, value: &str) -> Option<i64> {
     match feed_type {
         FeedType::Atom => parse_timestamp_atom(value),
+        FeedType::RSS1 => parse_timestamp_rss(value),
         FeedType::RSS2 => parse_timestamp_rss(value),
         _ => parse_timestamp_atom(value),
     }
 }
 
-async fn load_feeds_from_gist(url: &str) -> Result<Vec<FeedItem>, String> {
-    let response = reqwest::get(url)
+fn parse_feed_with_fallback(feed_bytes: &[u8]) -> Result<feed_rs::model::Feed, String> {
+    if let Ok(feed) = feed_rs::parser::parse(feed_bytes) {
+        return Ok(feed);
+    }
+
+    let trimmed_bom = feed_bytes
+        .strip_prefix(&[0xEF, 0xBB, 0xBF])
+        .unwrap_or(feed_bytes);
+    if let Ok(feed) = feed_rs::parser::parse(trimmed_bom) {
+        return Ok(feed);
+    }
+
+    if let Some(xml_start) = trimmed_bom.iter().position(|byte| *byte == b'<') {
+        let xml_body = &trimmed_bom[xml_start..];
+        if let Ok(feed) = feed_rs::parser::parse(xml_body) {
+            return Ok(feed);
+        }
+
+        let xml_text = String::from_utf8_lossy(xml_body);
+        let normalized = xml_text
+            .replacen(r#"version="1.0""#, r#"version="2.0""#, 1)
+            .replacen("version='1.0'", "version='2.0'", 1);
+        return feed_rs::parser::parse(normalized.as_bytes())
+            .map_err(|err| format!("unable to parse feed: {err}"));
+    }
+
+    Err("unable to parse feed: no xml content".to_string())
+}
+
+async fn load_feeds_from_server(url: &str) -> Result<Vec<FeedItem>, String> {
+    let feed_bytes = reqwest::get(url)
         .await
-        .map_err(|err| format!("failed to load gist: {err}"))?
-        .text()
+        .map_err(|err| format!("failed to load feed server: {err}"))?
+        .bytes()
         .await
-        .map_err(|err| format!("failed to read gist: {err}"))?;
-    let config: GistConfig =
-        toml::from_str(&response).map_err(|err| format!("invalid toml: {err}"))?;
-    let feeds = config
-        .feeds
-        .ok_or_else(|| "no [feeds] section found".to_string())?;
+        .map_err(|err| format!("failed to read feed server: {err}"))?;
+    let parsed = parse_feed_with_fallback(feed_bytes.as_ref())
+        .map_err(|err| format!("failed to parse feed server: {err}"))?;
+
+    let avatar_url = parsed
+        .logo
+        .clone()
+        .or(parsed.icon.clone())
+        .map(|image| image.uri);
+    let feed_title = parsed
+        .title
+        .as_ref()
+        .map(|value| value.content.clone())
+        .unwrap_or_else(|| "Feed Server".to_string());
+    let feed_type = parsed.feed_type;
+    let source = match feed_type {
+        FeedType::Atom => FeedSourceKind::Atom,
+        _ => FeedSourceKind::Custom,
+    };
 
     let mut items = Vec::new();
 
-    for (key, feed) in feeds {
-        if feed.url.trim().is_empty() {
-            continue;
-        }
-        let feed_text = reqwest::get(&feed.url)
-            .await
-            .map_err(|err| format!("failed to load feed {}: {err}", feed.url))?
-            .text()
-            .await
-            .map_err(|err| format!("failed to read feed {}: {err}", feed.url))?;
-        let parsed = feed_rs::parser::parse(feed_text.as_bytes())
-            .map_err(|err| format!("failed to parse feed {}: {err}", feed.url))?;
-        let avatar_url = parsed
-            .logo
-            .clone()
-            .or(parsed.icon.clone())
-            .map(|image| image.uri);
-        let author = feed.name.clone().unwrap_or_else(|| key.clone());
-        let feed_type = parsed.feed_type;
-        let feed_tags = feed.tags.clone().unwrap_or_default();
+    for entry in parsed.entries {
+        let title = entry
+            .title
+            .as_ref()
+            .map(|value| value.content.clone())
+            .unwrap_or_default();
+        let summary = entry
+            .content
+            .as_ref()
+            .and_then(|value| value.body.clone())
+            .or_else(|| entry.summary.as_ref().map(|value| value.content.clone()))
+            .unwrap_or_else(|| title.clone());
+        let summary = ammonia::Builder::default()
+            .add_tags(["pre", "code", "p", "br"])
+            .rm_tags([
+                "img",
+                "picture",
+                "source",
+                "figure",
+                "figcaption",
+                "video",
+                "audio",
+                "iframe",
+                "svg",
+            ])
+            .clean(&summary)
+            .to_string();
+        let published_at: String = entry
+            .published
+            .as_ref()
+            .map(ToString::to_string)
+            .or_else(|| entry.updated.as_ref().map(ToString::to_string))
+            .ok_or_else(|| {
+                format!(
+                    "missing published/updated date in feed entry {}",
+                    if entry.id.is_empty() {
+                        title.clone()
+                    } else {
+                        entry.id.clone()
+                    }
+                )
+            })?;
+        let published_ts =
+            parse_timestamp_for_feed(&feed_type, &published_at).ok_or_else(|| {
+                format!(
+                    "invalid date '{}' in feed entry {}",
+                    published_at,
+                    if entry.id.is_empty() {
+                        title.clone()
+                    } else {
+                        entry.id.clone()
+                    }
+                )
+            })?;
+        let link = entry
+            .links
+            .first()
+            .map(|link| link.href.clone())
+            .unwrap_or_default();
+        let suffix = items.len();
+        let id = if entry.id.is_empty() {
+            format!("feed-{suffix}")
+        } else {
+            entry.id.clone()
+        };
 
-        for entry in parsed.entries {
-            let title = entry
-                .title
-                .as_ref()
-                .map(|value| value.content.clone())
-                .unwrap_or_default();
-            let summary = entry
-                .content
-                .as_ref()
-                .and_then(|value| value.body.clone())
-                .or_else(|| entry.summary.as_ref().map(|value| value.content.clone()))
-                .unwrap_or_else(|| title.clone());
-            let summary = ammonia::Builder::default()
-                .add_tags(["pre", "code", "p", "br"])
-                .clean(&summary)
-                .to_string();
-            let published_at: String = entry
-                .published
-                .as_ref()
-                .map(ToString::to_string)
-                .or_else(|| entry.updated.as_ref().map(ToString::to_string))
-                .ok_or_else(|| {
-                    format!(
-                        "missing published/updated date in feed {} entry {}",
-                        feed.url,
-                        if entry.id.is_empty() {
-                            title.clone()
-                        } else {
-                            entry.id.clone()
-                        }
-                    )
-                })?;
-            let published_ts =
-                parse_timestamp_for_feed(&feed_type, &published_at).ok_or_else(|| {
-                    format!(
-                        "invalid date '{}' in feed {} entry {}",
-                        published_at,
-                        feed.url,
-                        if entry.id.is_empty() {
-                            title.clone()
-                        } else {
-                            entry.id.clone()
-                        }
-                    )
-                })?;
-            let link = entry
-                .links
-                .first()
-                .map(|link| link.href.clone())
-                .unwrap_or_default();
-            let suffix = items.len();
-            let id = if entry.id.is_empty() {
-                format!("{key}-{suffix}")
-            } else {
-                entry.id.clone()
-            };
-
-            items.push(FeedItem {
-                id,
-                title,
-                summary,
-                source: FeedSourceKind::Atom,
-                published_at,
-                published_ts,
-                link,
-                author: author.clone(),
-                avatar_url: avatar_url.clone(),
-                tags: feed_tags.clone(),
-            });
+        let mut tags = Vec::new();
+        for category in &entry.categories {
+            let term = category.term.trim();
+            if !term.is_empty() {
+                tags.push(term.to_string());
+            }
         }
+        tags.sort();
+        tags.dedup();
+
+        let author = entry
+            .authors
+            .first()
+            .map(|author| author.name.clone())
+            .unwrap_or_else(|| feed_title.clone());
+
+        items.push(FeedItem {
+            id,
+            title,
+            summary,
+            source,
+            published_at,
+            published_ts,
+            link,
+            author,
+            avatar_url: avatar_url.clone(),
+            tags,
+        });
     }
 
     if items.is_empty() {
@@ -752,12 +800,12 @@ fn trigger_feed_sync(
     mut settings_status: Signal<Option<String>>,
 ) {
     if url.is_empty() {
-        *settings_status.write() = Some("Please enter a Gist URL.".to_string());
+        *settings_status.write() = Some("Please enter a Feed Server URL.".to_string());
         return;
     }
     *settings_status.write() = Some("Syncing feeds...".to_string());
     spawn(async move {
-        match load_feeds_from_gist(&url).await {
+        match load_feeds_from_server(&url).await {
             Ok(items) => {
                 let mut status = "Feeds updated.".to_string();
                 if let Err(err) = storage::store_feed_items(&items) {
@@ -777,9 +825,9 @@ fn trigger_feed_sync(
 pub fn AppRoot() -> Element {
     let stored_settings = storage::load_settings();
     let initial_theme = stored_settings.theme.unwrap_or(ThemeMode::Light);
-    let initial_gist_url = stored_settings.gist_url.unwrap_or_else(|| {
-        "https://gist.githubusercontent.com/scbizu/2fea15bd4748c057f01ccec8c2ca2990/raw/66f246525ebafb0bca79c7253e6d45a19eb62e9e/umbreon_app_settings.toml".to_string()
-    });
+    let initial_feed_server_url = stored_settings
+        .feed_server_url
+        .unwrap_or_else(|| "https://feed-aggregator-worker.scnace.workers.dev".to_string());
     let initial_memory_server_url = stored_settings
         .memory_server_url
         .unwrap_or_else(|| "http://localhost:8787".to_string());
@@ -803,7 +851,7 @@ pub fn AppRoot() -> Element {
     let live_streams = use_signal(state::mock_live_streams);
     let now_playing = use_signal(state::mock_initial_session);
     let memory_panel = use_signal(state::mock_memory_panel);
-    let gist_url = use_signal(|| initial_gist_url);
+    let feed_server_url = use_signal(|| initial_feed_server_url);
     let memory_server_url = use_signal(|| initial_memory_server_url);
     let settings_status = use_signal(|| None::<String>);
 
@@ -815,7 +863,7 @@ pub fn AppRoot() -> Element {
         live_streams,
         now_playing,
         memory_panel,
-        gist_url,
+        feed_server_url,
         memory_server_url,
         settings_status,
     };
@@ -831,7 +879,7 @@ pub fn AppRoot() -> Element {
         ThemeMode::Light => "theme-light",
     };
 
-    let mut gist_url = ctx.gist_url;
+    let mut feed_server_url = ctx.feed_server_url;
     let mut memory_server_url = ctx.memory_server_url;
     let settings_status = ctx.settings_status;
     let mut theme = ctx.theme;
@@ -844,7 +892,7 @@ pub fn AppRoot() -> Element {
             return;
         }
         *auto_sync_once.write() = true;
-        let url = gist_url.read().trim().to_string();
+        let url = feed_server_url.read().trim().to_string();
         trigger_feed_sync(url, feed_items.clone(), settings_status.clone());
     });
 
@@ -865,26 +913,26 @@ pub fn AppRoot() -> Element {
                     NavSection::Settings => rsx!(
                         div { class: "settings-pane",
                             h2 { "设置" }
-                            p { "Sync feeds from a remote Gist (TOML)." }
+                            p { "Sync feeds from your feed server (Atom)." }
                             div { class: "settings-field",
-                                label { class: "settings-label", "Gist URL" }
+                                label { class: "settings-label", "Feed Server" }
                                 input {
                                     class: "settings-input",
                                     r#type: "url",
-                                    placeholder: "https://gist.githubusercontent.com/.../config.toml",
-                                    value: "{gist_url.read()}",
+                                    placeholder: "https://feed-aggregator-worker.scnace.workers.dev",
+                                    value: "{feed_server_url.read()}",
                                     oninput: move |evt| {
                                         let value = evt.value();
-                                        *gist_url.write() = value.clone();
-                                        storage::store_gist_url(&value);
+                                        *feed_server_url.write() = value.clone();
+                                        storage::store_feed_server_url(&value);
                                     }
                                 }
                                 button {
                                     class: "settings-sync",
                                     onclick: move |_| {
-                                        let url = gist_url.read().trim().to_string();
+                                        let url = feed_server_url.read().trim().to_string();
                                         let memory_url = memory_server_url.read().trim().to_string();
-                                        storage::store_gist_url(&url);
+                                        storage::store_feed_server_url(&url);
                                         storage::store_memory_server_url(&memory_url);
                                         trigger_feed_sync(url, feed_items.clone(), settings_status.clone());
                                     },

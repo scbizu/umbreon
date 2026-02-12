@@ -2,7 +2,7 @@ use crate::state::{FeedItem, FeedSourceKind, ThemeMode};
 
 #[derive(Default)]
 pub struct StoredSettings {
-    pub gist_url: Option<String>,
+    pub feed_server_url: Option<String>,
     pub memory_server_url: Option<String>,
     pub theme: Option<ThemeMode>,
 }
@@ -10,10 +10,11 @@ pub struct StoredSettings {
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use super::{FeedItem, FeedSourceKind, StoredSettings, ThemeMode};
-    use rusqlite::{params, Connection};
+    use rusqlite::{Connection, params};
     use std::path::PathBuf;
 
-    const SETTINGS_GIST_URL: &str = "gist_url";
+    const SETTINGS_FEED_SERVER_URL: &str = "feed_server_url";
+    const SETTINGS_GIST_URL_LEGACY: &str = "gist_url";
     const SETTINGS_MEMORY_SERVER_URL: &str = "memory_server_url";
     const SETTINGS_THEME: &str = "theme";
 
@@ -83,12 +84,19 @@ mod imp {
         let Ok(mut stmt) = conn.prepare("SELECT key, value FROM settings") else {
             return settings;
         };
-        let Ok(rows) = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))) else {
+        let Ok(rows) = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }) else {
             return settings;
         };
         for row in rows.flatten() {
             match row.0.as_str() {
-                SETTINGS_GIST_URL => settings.gist_url = Some(row.1),
+                SETTINGS_FEED_SERVER_URL => settings.feed_server_url = Some(row.1),
+                SETTINGS_GIST_URL_LEGACY => {
+                    if settings.feed_server_url.is_none() {
+                        settings.feed_server_url = Some(row.1);
+                    }
+                }
                 SETTINGS_MEMORY_SERVER_URL => settings.memory_server_url = Some(row.1),
                 SETTINGS_THEME => settings.theme = theme_from_value(&row.1),
                 _ => {}
@@ -97,11 +105,11 @@ mod imp {
         settings
     }
 
-    pub fn store_gist_url(url: &str) {
+    pub fn store_feed_server_url(url: &str) {
         let Ok(conn) = open_db() else {
             return;
         };
-        let _ = upsert_setting(&conn, SETTINGS_GIST_URL, url);
+        let _ = upsert_setting(&conn, SETTINGS_FEED_SERVER_URL, url);
     }
 
     pub fn store_memory_server_url(url: &str) {
@@ -194,7 +202,8 @@ mod imp {
 mod imp {
     use super::{FeedItem, StoredSettings, ThemeMode};
 
-    const GIST_STORAGE_KEY: &str = "umbreon.gist_url";
+    const FEED_SERVER_STORAGE_KEY: &str = "umbreon.feed_server_url";
+    const GIST_STORAGE_KEY_LEGACY: &str = "umbreon.gist_url";
     const MEMORY_SERVER_STORAGE_KEY: &str = "umbreon.memory_server_url";
     const THEME_STORAGE_KEY: &str = "umbreon.theme";
 
@@ -221,8 +230,10 @@ mod imp {
         let Ok(Some(storage)) = window.local_storage() else {
             return settings;
         };
-        if let Ok(Some(value)) = storage.get_item(GIST_STORAGE_KEY) {
-            settings.gist_url = Some(value);
+        if let Ok(Some(value)) = storage.get_item(FEED_SERVER_STORAGE_KEY) {
+            settings.feed_server_url = Some(value);
+        } else if let Ok(Some(value)) = storage.get_item(GIST_STORAGE_KEY_LEGACY) {
+            settings.feed_server_url = Some(value);
         }
         if let Ok(Some(value)) = storage.get_item(MEMORY_SERVER_STORAGE_KEY) {
             settings.memory_server_url = Some(value);
@@ -233,10 +244,10 @@ mod imp {
         settings
     }
 
-    pub fn store_gist_url(url: &str) {
+    pub fn store_feed_server_url(url: &str) {
         if let Some(window) = web_sys::window() {
             if let Ok(Some(storage)) = window.local_storage() {
-                let _ = storage.set_item(GIST_STORAGE_KEY, url);
+                let _ = storage.set_item(FEED_SERVER_STORAGE_KEY, url);
             }
         }
     }
@@ -267,10 +278,6 @@ mod imp {
 }
 
 pub use imp::{
-    load_feed_items,
-    load_settings,
-    store_feed_items,
-    store_gist_url,
-    store_memory_server_url,
-    store_theme,
+    load_feed_items, load_settings, store_feed_items, store_feed_server_url,
+    store_memory_server_url, store_theme,
 };

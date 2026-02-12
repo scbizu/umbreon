@@ -1,0 +1,13 @@
+{
+  "name": "feed-aggregator-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@iarna/toml": "^3.0.0",
+    "fast-xml-parser": "^4.3.6"
+  }
+}

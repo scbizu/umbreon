@@ -1,5 +1,6 @@
 use crate::state::{FeedItem, FeedSourceKind, use_app_context};
 use dioxus::prelude::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::info;
 use url::Url;
 
@@ -67,6 +68,12 @@ fn measure_card_height() -> Option<f64> {
 pub fn TimelinePane() -> Element {
     let ctx = use_app_context();
     let mut items = ctx.feed_items.read().clone();
+    let now_ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0);
+    let cutoff_ts = now_ts.saturating_sub(60 * 24 * 60 * 60);
+    items.retain(|item| item.published_ts >= cutoff_ts);
     items.sort_by(|a, b| b.published_ts.cmp(&a.published_ts));
     let total = items.len();
     let mut selected = use_signal(|| None::<FeedItem>);
@@ -220,11 +227,7 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
                 on_open.call(card_item.clone());
             },
             div { class: "post-avatar",
-                if let Some(avatar) = item.avatar_url.clone() {
-                    img { class: "post-avatar-img", src: "{avatar}" }
-                } else {
-                    span { class: "post-avatar-fallback", "{fallback}" }
-                }
+                span { class: "post-avatar-fallback", "{fallback}" }
             }
             div { class: "post-body",
                 header { class: "post-header",

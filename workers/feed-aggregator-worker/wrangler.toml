@@ -1,0 +1,15 @@
+name = "feed-aggregator-worker"
+main = "src/index.ts"
+compatibility_date = "2026-02-11"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Public gist URL that contains your [feeds] config.
+GIST_URL = "https://gist.githubusercontent.com/scbizu/2fea15bd4748c057f01ccec8c2ca2990/raw/99a3fcffc1d64081f07d91ae96d9d14fc79fa554/umbreon_app_settings.toml"
+# Optional feed metadata defaults.
+FEED_TITLE = "Umbreon Aggregated Feed"
+FEED_SUBTITLE = "Aggregated via Cloudflare Workers"
+FEED_LINK = ""
+# Optional limits.
+MAX_ITEMS = "200"
+DAYS = "60"

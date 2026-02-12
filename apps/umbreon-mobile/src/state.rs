@@ -125,7 +125,7 @@ pub struct AppContext {
     pub live_streams: Signal<Vec<LiveStream>>,
     pub now_playing: Signal<Option<MediaSession>>,
     pub memory_panel: Signal<MemoryPanelState>,
-    pub gist_url: Signal<String>,
+    pub feed_server_url: Signal<String>,
     pub memory_server_url: Signal<String>,
     pub settings_status: Signal<Option<String>>,
 }
