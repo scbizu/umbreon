@@ -1,5 +1,6 @@
 mod app;
 mod components;
+mod memory_client;
 mod state;
 mod storage;
 

@@ -720,6 +720,9 @@ pub fn AppRoot() -> Element {
     let initial_gist_url = stored_settings.gist_url.unwrap_or_else(|| {
         "https://gist.githubusercontent.com/scbizu/2fea15bd4748c057f01ccec8c2ca2990/raw/66f246525ebafb0bca79c7253e6d45a19eb62e9e/umbreon_app_settings.toml".to_string()
     });
+    let initial_memory_server_url = stored_settings
+        .memory_server_url
+        .unwrap_or_else(|| "http://localhost:8787".to_string());
     let initial_feed_items = {
         let cached = storage::load_feed_items();
         if cached.is_empty() {
@@ -737,6 +740,7 @@ pub fn AppRoot() -> Element {
     let now_playing = use_signal(state::mock_initial_session);
     let memory_panel = use_signal(state::mock_memory_panel);
     let gist_url = use_signal(|| initial_gist_url);
+    let memory_server_url = use_signal(|| initial_memory_server_url);
     let settings_status = use_signal(|| None::<String>);
 
     let ctx_seed = AppContext {
@@ -748,6 +752,7 @@ pub fn AppRoot() -> Element {
         now_playing,
         memory_panel,
         gist_url,
+        memory_server_url,
         settings_status,
     };
 
@@ -763,6 +768,7 @@ pub fn AppRoot() -> Element {
     };
 
     let mut gist_url = ctx.gist_url;
+    let mut memory_server_url = ctx.memory_server_url;
     let mut settings_status = ctx.settings_status;
     let mut theme = ctx.theme;
     let mode = *theme.read();
@@ -801,6 +807,20 @@ pub fn AppRoot() -> Element {
                                 }
                             }
                             div { class: "settings-field",
+                                label { class: "settings-label", "Memory Server" }
+                                input {
+                                    class: "settings-input",
+                                    r#type: "url",
+                                    placeholder: "http://localhost:8787",
+                                    value: "{memory_server_url.read()}",
+                                    oninput: move |evt| {
+                                        let value = evt.value();
+                                        *memory_server_url.write() = value.clone();
+                                        storage::store_memory_server_url(&value);
+                                    }
+                                }
+                            }
+                            div { class: "settings-field",
                                 label { class: "settings-label", "Theme" }
                                 div { class: "theme-toggle settings-theme-toggle",
                                     span { class: "material-icons theme-icon", "light_mode" }
@@ -824,7 +844,9 @@ pub fn AppRoot() -> Element {
                                 class: "settings-sync",
                                 onclick: move |_| {
                                     let url = gist_url.read().trim().to_string();
+                                    let memory_url = memory_server_url.read().trim().to_string();
                                     storage::store_gist_url(&url);
+                                    storage::store_memory_server_url(&memory_url);
                                     if url.is_empty() {
                                         *settings_status.write() = Some("Please enter a Gist URL.".to_string());
                                         return;

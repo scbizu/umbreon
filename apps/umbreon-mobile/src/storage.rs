@@ -3,6 +3,7 @@ use crate::state::{FeedItem, FeedSourceKind, ThemeMode};
 #[derive(Default)]
 pub struct StoredSettings {
     pub gist_url: Option<String>,
+    pub memory_server_url: Option<String>,
     pub theme: Option<ThemeMode>,
 }
 
@@ -13,6 +14,7 @@ mod imp {
     use std::path::PathBuf;
 
     const SETTINGS_GIST_URL: &str = "gist_url";
+    const SETTINGS_MEMORY_SERVER_URL: &str = "memory_server_url";
     const SETTINGS_THEME: &str = "theme";
 
     fn db_path() -> PathBuf {
@@ -86,6 +88,7 @@ mod imp {
         for row in rows.flatten() {
             match row.0.as_str() {
                 SETTINGS_GIST_URL => settings.gist_url = Some(row.1),
+                SETTINGS_MEMORY_SERVER_URL => settings.memory_server_url = Some(row.1),
                 SETTINGS_THEME => settings.theme = theme_from_value(&row.1),
                 _ => {}
             }
@@ -98,6 +101,13 @@ mod imp {
             return;
         };
         let _ = upsert_setting(&conn, SETTINGS_GIST_URL, url);
+    }
+
+    pub fn store_memory_server_url(url: &str) {
+        let Ok(conn) = open_db() else {
+            return;
+        };
+        let _ = upsert_setting(&conn, SETTINGS_MEMORY_SERVER_URL, url);
     }
 
     pub fn store_theme(theme: ThemeMode) {
@@ -174,6 +184,7 @@ mod imp {
     use super::{FeedItem, StoredSettings, ThemeMode};
 
     const GIST_STORAGE_KEY: &str = "umbreon.gist_url";
+    const MEMORY_SERVER_STORAGE_KEY: &str = "umbreon.memory_server_url";
     const THEME_STORAGE_KEY: &str = "umbreon.theme";
 
     fn theme_from_value(value: &str) -> Option<ThemeMode> {
@@ -202,6 +213,9 @@ mod imp {
         if let Ok(Some(value)) = storage.get_item(GIST_STORAGE_KEY) {
             settings.gist_url = Some(value);
         }
+        if let Ok(Some(value)) = storage.get_item(MEMORY_SERVER_STORAGE_KEY) {
+            settings.memory_server_url = Some(value);
+        }
         if let Ok(Some(value)) = storage.get_item(THEME_STORAGE_KEY) {
             settings.theme = theme_from_value(&value);
         }
@@ -212,6 +226,14 @@ mod imp {
         if let Some(window) = web_sys::window() {
             if let Ok(Some(storage)) = window.local_storage() {
                 let _ = storage.set_item(GIST_STORAGE_KEY, url);
+            }
+        }
+    }
+
+    pub fn store_memory_server_url(url: &str) {
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                let _ = storage.set_item(MEMORY_SERVER_STORAGE_KEY, url);
             }
         }
     }
@@ -233,4 +255,11 @@ mod imp {
     }
 }
 
-pub use imp::{load_feed_items, load_settings, store_feed_items, store_gist_url, store_theme};
+pub use imp::{
+    load_feed_items,
+    load_settings,
+    store_feed_items,
+    store_gist_url,
+    store_memory_server_url,
+    store_theme,
+};

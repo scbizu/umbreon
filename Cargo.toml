@@ -1,8 +1,6 @@
 [workspace]
 members = [
   "apps/umbreon-mobile",
-  "services/feed-aggregator",
-  "workers/cloud-worker",
   "crates/umbreon-core",
 ]
 resolver = "2"

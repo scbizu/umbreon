@@ -222,7 +222,7 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
                             info!("add to memory: {}", item.id);
                         },
                         span { class: "material-icons", "bookmark_add" }
-                        span { "入魂" }
+                        span { "铸魂" }
                     }
                 }
             }

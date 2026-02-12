@@ -1,0 +1,9 @@
+name = "supermemory-worker"
+main = "src/index.ts"
+compatibility_date = "2026-02-11"
+
+[vars]
+# Set these via `wrangler secret put SUPERMEMORY_API_KEY` and (optionally) `wrangler secret put CF_AIG_TOKEN` / `wrangler secret put OPENAI_API_KEY`
+SUPERMEMORY_API_KEY = ""
+CF_AIG_TOKEN = ""
+OPENAI_API_KEY = ""

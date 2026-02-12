@@ -1,0 +1,14 @@
+{
+  "name": "supermemory-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@supermemory/tools": "^1.4.0",
+    "@ai-sdk/openai": "^2.0.89",
+    "ai": "^5.0.106"
+  }
+}

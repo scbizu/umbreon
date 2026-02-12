@@ -125,6 +125,7 @@ pub struct AppContext {
     pub now_playing: Signal<Option<MediaSession>>,
     pub memory_panel: Signal<MemoryPanelState>,
     pub gist_url: Signal<String>,
+    pub memory_server_url: Signal<String>,
     pub settings_status: Signal<Option<String>>,
 }
 
