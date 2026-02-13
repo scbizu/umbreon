@@ -1,5 +1,6 @@
 mod app;
 mod components;
+mod general_ai_client;
 mod helper;
 mod memory_client;
 mod settings;

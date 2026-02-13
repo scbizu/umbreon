@@ -13,6 +13,7 @@ pub const BASE_STYLES: &str = r#"
   background: var(--md-sys-color-background);
   color: var(--md-sys-color-on-background);
   overflow: hidden;
+  position: relative;
 }
 
 .umbreon-header {
@@ -289,6 +290,7 @@ pub const BASE_STYLES: &str = r#"
 .timeline-pane {
   flex: 1;
   overflow: auto;
+  overflow-x: hidden;
   padding: 24px 18px 18px;
   display: flex;
   flex-direction: column;
@@ -317,6 +319,16 @@ pub const BASE_STYLES: &str = r#"
   gap: 8px;
 }
 
+.settings-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.settings-row-spread {
+  justify-content: space-between;
+}
+
 .settings-label {
   font-size: 14px;
   color: var(--md-sys-color-on-surface-variant);
@@ -328,9 +340,26 @@ pub const BASE_STYLES: &str = r#"
   border: 1px solid var(--md-sys-color-outline-variant);
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
+  flex: 1;
+}
+
+.settings-select {
+  border-radius: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  min-height: 40px;
+  height: 40px;
+  line-height: 40px;
+  flex: 1;
 }
 
 .settings-input:focus {
+  outline: 2px solid var(--md-sys-color-primary);
+}
+
+.settings-select:focus {
   outline: 2px solid var(--md-sys-color-primary);
 }
 
@@ -346,8 +375,60 @@ pub const BASE_STYLES: &str = r#"
   cursor: pointer;
 }
 
+.settings-sync-icon {
+  width: 40px;
+  height: 40px;
+  justify-content: center;
+  padding: 0;
+}
+
 .settings-sync:hover {
   opacity: 0.92;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-action {
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.settings-action-icon {
+  width: 40px;
+  height: 40px;
+  justify-content: center;
+  padding: 0;
+}
+
+.settings-action:hover {
+  background: var(--md-sys-color-surface-container-high);
+}
+
+.settings-action.is-loading .material-icons,
+.settings-action-icon.is-loading .material-icons {
+  animation: spin 1s linear infinite;
+}
+
+.settings-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.settings-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .settings-status {
@@ -358,6 +439,40 @@ pub const BASE_STYLES: &str = r#"
 
 .settings-theme-toggle {
   justify-content: flex-start;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  padding: 12px 14px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+  max-width: min(90vw, 420px);
+  z-index: 5;
+}
+
+.toast-success {
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-on-tertiary-container);
+}
+
+.toast-error {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}
+
+.toast-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
 }
 
 .explore-pane {
@@ -384,6 +499,32 @@ pub const BASE_STYLES: &str = r#"
   color: var(--md-sys-color-on-surface);
   cursor: pointer;
   font-size: 14px;
+}
+
+.explore-sync {
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface-variant);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.explore-sync:hover {
+  background: var(--md-sys-color-surface-container-high);
+}
+
+.explore-sync.is-loading {
+  color: var(--md-sys-color-primary);
+}
+
+.explore-sync.is-loading .material-icons {
+  animation: spin 1s linear infinite;
 }
 
 .explore-card {
@@ -437,6 +578,15 @@ pub const BASE_STYLES: &str = r#"
 .explore-chevron {
   margin-left: auto;
   color: var(--md-sys-color-on-surface-variant);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .timeline-pane > * {

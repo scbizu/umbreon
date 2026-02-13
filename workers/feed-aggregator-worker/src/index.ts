@@ -320,10 +320,14 @@ export default {
           const response = await fetchWithTimeout(feed.url, 12_000);
           if (!response.ok) return;
           const xml = await response.text();
-          const normalized = normalizeFeed(xml, tags).map((entry) => ({
-            ...entry,
-            sourceTitle: entry.sourceTitle ?? feed.name ?? key,
-          }));
+          const normalized = normalizeFeed(xml, tags).map((entry) => {
+            const sourceTitle = entry.sourceTitle ?? feed.name ?? key;
+            return {
+              ...entry,
+              sourceTitle,
+              author: entry.author ?? sourceTitle,
+            };
+          });
           entries.push(...normalized);
         } catch {
           return;

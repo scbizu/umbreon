@@ -57,6 +57,18 @@ pub enum FeedSourceKind {
     Custom,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToastKind {
+    Success,
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToastMessage {
+    pub kind: ToastKind,
+    pub text: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FeedItem {
     pub id: String,
@@ -122,7 +134,12 @@ pub struct AppContext {
     pub memory_panel: Signal<MemoryPanelState>,
     pub feed_server_url: Signal<String>,
     pub memory_server_url: Signal<String>,
+    pub llm_endpoint: Signal<String>,
+    pub llm_api_key: Signal<String>,
+    pub llm_model: Signal<String>,
+    pub llm_models: Signal<Vec<String>>,
     pub settings_status: Signal<Option<String>>,
+    pub toast: Signal<Option<ToastMessage>>,
 }
 
 pub fn use_app_context() -> AppContext {

@@ -4,6 +4,10 @@ use crate::state::{FeedItem, FeedSourceKind, ThemeMode};
 pub struct StoredSettings {
     pub feed_server_url: Option<String>,
     pub memory_server_url: Option<String>,
+    pub llm_endpoint: Option<String>,
+    pub llm_api_key: Option<String>,
+    pub llm_model: Option<String>,
+    pub llm_models: Option<Vec<String>>,
     pub theme: Option<ThemeMode>,
 }
 
@@ -16,6 +20,10 @@ mod imp {
     const SETTINGS_FEED_SERVER_URL: &str = "feed_server_url";
     const SETTINGS_GIST_URL_LEGACY: &str = "gist_url";
     const SETTINGS_MEMORY_SERVER_URL: &str = "memory_server_url";
+    const SETTINGS_LLM_ENDPOINT: &str = "llm_endpoint";
+    const SETTINGS_LLM_API_KEY: &str = "llm_api_key";
+    const SETTINGS_LLM_MODEL: &str = "llm_model";
+    const SETTINGS_LLM_MODELS: &str = "llm_models";
     const SETTINGS_THEME: &str = "theme";
 
     fn db_path() -> PathBuf {
@@ -60,6 +68,14 @@ mod imp {
         }
     }
 
+    fn models_to_value(models: &[String]) -> Option<String> {
+        serde_json::to_string(models).ok()
+    }
+
+    fn models_from_value(value: &str) -> Option<Vec<String>> {
+        serde_json::from_str::<Vec<String>>(value).ok()
+    }
+
     fn source_to_value(source: &FeedSourceKind) -> &'static str {
         match source {
             FeedSourceKind::Atom => "atom",
@@ -98,6 +114,10 @@ mod imp {
                     }
                 }
                 SETTINGS_MEMORY_SERVER_URL => settings.memory_server_url = Some(row.1),
+                SETTINGS_LLM_ENDPOINT => settings.llm_endpoint = Some(row.1),
+                SETTINGS_LLM_API_KEY => settings.llm_api_key = Some(row.1),
+                SETTINGS_LLM_MODEL => settings.llm_model = Some(row.1),
+                SETTINGS_LLM_MODELS => settings.llm_models = models_from_value(&row.1),
                 SETTINGS_THEME => settings.theme = theme_from_value(&row.1),
                 _ => {}
             }
@@ -117,6 +137,37 @@ mod imp {
             return;
         };
         let _ = upsert_setting(&conn, SETTINGS_MEMORY_SERVER_URL, url);
+    }
+
+    pub fn store_llm_endpoint(endpoint: &str) {
+        let Ok(conn) = open_db() else {
+            return;
+        };
+        let _ = upsert_setting(&conn, SETTINGS_LLM_ENDPOINT, endpoint);
+    }
+
+    pub fn store_llm_api_key(api_key: &str) {
+        let Ok(conn) = open_db() else {
+            return;
+        };
+        let _ = upsert_setting(&conn, SETTINGS_LLM_API_KEY, api_key);
+    }
+
+    pub fn store_llm_model(model: &str) {
+        let Ok(conn) = open_db() else {
+            return;
+        };
+        let _ = upsert_setting(&conn, SETTINGS_LLM_MODEL, model);
+    }
+
+    pub fn store_llm_models(models: &[String]) {
+        let Some(value) = models_to_value(models) else {
+            return;
+        };
+        let Ok(conn) = open_db() else {
+            return;
+        };
+        let _ = upsert_setting(&conn, SETTINGS_LLM_MODELS, &value);
     }
 
     pub fn store_theme(theme: ThemeMode) {
@@ -205,6 +256,10 @@ mod imp {
     const FEED_SERVER_STORAGE_KEY: &str = "umbreon.feed_server_url";
     const GIST_STORAGE_KEY_LEGACY: &str = "umbreon.gist_url";
     const MEMORY_SERVER_STORAGE_KEY: &str = "umbreon.memory_server_url";
+    const LLM_ENDPOINT_STORAGE_KEY: &str = "umbreon.llm_endpoint";
+    const LLM_API_KEY_STORAGE_KEY: &str = "umbreon.llm_api_key";
+    const LLM_MODEL_STORAGE_KEY: &str = "umbreon.llm_model";
+    const LLM_MODELS_STORAGE_KEY: &str = "umbreon.llm_models";
     const THEME_STORAGE_KEY: &str = "umbreon.theme";
 
     fn theme_from_value(value: &str) -> Option<ThemeMode> {
@@ -222,6 +277,14 @@ mod imp {
         }
     }
 
+    fn models_to_value(models: &[String]) -> Option<String> {
+        serde_json::to_string(models).ok()
+    }
+
+    fn models_from_value(value: &str) -> Option<Vec<String>> {
+        serde_json::from_str::<Vec<String>>(value).ok()
+    }
+
     pub fn load_settings() -> StoredSettings {
         let mut settings = StoredSettings::default();
         let Some(window) = web_sys::window() else {
@@ -237,6 +300,18 @@ mod imp {
         }
         if let Ok(Some(value)) = storage.get_item(MEMORY_SERVER_STORAGE_KEY) {
             settings.memory_server_url = Some(value);
+        }
+        if let Ok(Some(value)) = storage.get_item(LLM_ENDPOINT_STORAGE_KEY) {
+            settings.llm_endpoint = Some(value);
+        }
+        if let Ok(Some(value)) = storage.get_item(LLM_API_KEY_STORAGE_KEY) {
+            settings.llm_api_key = Some(value);
+        }
+        if let Ok(Some(value)) = storage.get_item(LLM_MODEL_STORAGE_KEY) {
+            settings.llm_model = Some(value);
+        }
+        if let Ok(Some(value)) = storage.get_item(LLM_MODELS_STORAGE_KEY) {
+            settings.llm_models = models_from_value(&value);
         }
         if let Ok(Some(value)) = storage.get_item(THEME_STORAGE_KEY) {
             settings.theme = theme_from_value(&value);
@@ -260,6 +335,41 @@ mod imp {
         }
     }
 
+    pub fn store_llm_endpoint(endpoint: &str) {
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                let _ = storage.set_item(LLM_ENDPOINT_STORAGE_KEY, endpoint);
+            }
+        }
+    }
+
+    pub fn store_llm_api_key(api_key: &str) {
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                let _ = storage.set_item(LLM_API_KEY_STORAGE_KEY, api_key);
+            }
+        }
+    }
+
+    pub fn store_llm_model(model: &str) {
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                let _ = storage.set_item(LLM_MODEL_STORAGE_KEY, model);
+            }
+        }
+    }
+
+    pub fn store_llm_models(models: &[String]) {
+        let Some(value) = models_to_value(models) else {
+            return;
+        };
+        if let Some(window) = web_sys::window() {
+            if let Ok(Some(storage)) = window.local_storage() {
+                let _ = storage.set_item(LLM_MODELS_STORAGE_KEY, &value);
+            }
+        }
+    }
+
     pub fn store_theme(theme: ThemeMode) {
         if let Some(window) = web_sys::window() {
             if let Ok(Some(storage)) = window.local_storage() {
@@ -278,6 +388,6 @@ mod imp {
 }
 
 pub use imp::{
-    load_feed_items, load_settings, store_feed_items, store_feed_server_url,
-    store_memory_server_url, store_theme,
+    load_feed_items, load_settings, store_feed_items, store_feed_server_url, store_llm_api_key,
+    store_llm_endpoint, store_llm_model, store_llm_models, store_memory_server_url, store_theme,
 };

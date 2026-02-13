@@ -15,6 +15,26 @@ pub fn AppRoot() -> Element {
         .as_deref()
         .unwrap_or("http://localhost:8787")
         .to_string();
+    let initial_llm_endpoint = stored_settings
+        .llm_endpoint
+        .as_deref()
+        .unwrap_or("https://api.openai.com/v1")
+        .to_string();
+    let initial_llm_api_key = stored_settings
+        .llm_api_key
+        .as_ref()
+        .cloned()
+        .unwrap_or_default();
+    let initial_llm_model = stored_settings
+        .llm_model
+        .as_ref()
+        .cloned()
+        .unwrap_or_default();
+    let initial_llm_models = stored_settings
+        .llm_models
+        .as_ref()
+        .cloned()
+        .unwrap_or_default();
 
     let feed_bootstrap = timeline::init_feed_bootstrap(&stored_settings);
     let should_auto_sync_stale_cache = feed_bootstrap.should_auto_sync_stale_cache;
@@ -29,7 +49,12 @@ pub fn AppRoot() -> Element {
     let memory_panel = use_signal(state::mock_memory_panel);
     let feed_server_url = use_signal(|| initial_feed_server_url);
     let memory_server_url = use_signal(|| initial_memory_server_url);
+    let llm_endpoint = use_signal(|| initial_llm_endpoint);
+    let llm_api_key = use_signal(|| initial_llm_api_key);
+    let llm_model = use_signal(|| initial_llm_model);
+    let llm_models = use_signal(|| initial_llm_models);
     let settings_status = use_signal(|| None::<String>);
+    let toast = use_signal(|| None::<state::ToastMessage>);
 
     let ctx_seed = AppContext {
         nav,
@@ -40,7 +65,12 @@ pub fn AppRoot() -> Element {
         memory_panel,
         feed_server_url,
         memory_server_url,
+        llm_endpoint,
+        llm_api_key,
+        llm_model,
+        llm_models,
         settings_status,
+        toast,
     };
 
     let ctx = use_context_provider({
@@ -74,6 +104,17 @@ pub fn AppRoot() -> Element {
         timeline::trigger_feed_sync(url, feed_items.clone(), settings_status.clone());
     });
 
+    let toast_class = ctx
+        .toast
+        .read()
+        .as_ref()
+        .map(|toast| match toast.kind {
+            state::ToastKind::Success => "toast toast-success",
+            state::ToastKind::Error => "toast toast-error",
+        })
+        .unwrap_or("toast");
+    let mut toast_signal = ctx.toast;
+
     rsx! {
         link {
             rel: "stylesheet",
@@ -96,6 +137,18 @@ pub fn AppRoot() -> Element {
                 }
             }
             NavigationBar {}
+            if let Some(toast) = ctx.toast.read().clone() {
+                div { class: "{toast_class}",
+                    span { "{toast.text}" }
+                    button {
+                        class: "toast-close",
+                        onclick: move |_| {
+                            *toast_signal.write() = None;
+                        },
+                        span { class: "material-icons", "close" }
+                    }
+                }
+            }
         }
     }
 }
