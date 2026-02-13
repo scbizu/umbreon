@@ -1,11 +1,15 @@
 mod app;
 mod components;
+mod helper;
 mod memory_client;
+mod settings;
 mod state;
 mod storage;
+mod style;
+mod timeline;
 
 use app::AppRoot;
-use dioxus_mobile::{launch::launch, Config};
+use dioxus_mobile::{Config, launch::launch};
 use std::any::Any;
 use tracing::info;
 
