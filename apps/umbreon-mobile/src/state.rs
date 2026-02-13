@@ -17,38 +17,34 @@ impl ThemeMode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavSection {
-    Timeline,
-    Live,
-    Vod,
+    Dialogue,
+    Explore,
     Memory,
     Settings,
 }
 
 impl NavSection {
-    pub const ALL: [NavSection; 5] = [
-        NavSection::Timeline,
-        NavSection::Live,
-        NavSection::Vod,
+    pub const ALL: [NavSection; 4] = [
+        NavSection::Dialogue,
+        NavSection::Explore,
         NavSection::Memory,
         NavSection::Settings,
     ];
 
     pub fn label(&self) -> &'static str {
         match self {
-            NavSection::Timeline => "圈子",
-            NavSection::Live => "直播",
-            NavSection::Vod => "追番",
-            NavSection::Memory => "吾魂",
+            NavSection::Dialogue => "对话",
+            NavSection::Explore => "探索",
+            NavSection::Memory => "记忆",
             NavSection::Settings => "设置",
         }
     }
 
     pub fn icon(&self) -> &'static str {
         match self {
-            NavSection::Timeline => "article",
-            NavSection::Live => "live_tv",
-            NavSection::Vod => "movie",
-            NavSection::Memory => "memory",
+            NavSection::Dialogue => "chat_bubble",
+            NavSection::Explore => "explore",
+            NavSection::Memory => "history",
             NavSection::Settings => "settings",
         }
     }
@@ -120,7 +116,6 @@ impl Default for MemoryPanelState {
 pub struct AppContext {
     pub nav: Signal<NavSection>,
     pub theme: Signal<ThemeMode>,
-    pub sidebar_collapsed: Signal<bool>,
     pub feed_items: Signal<Vec<FeedItem>>,
     pub live_streams: Signal<Vec<LiveStream>>,
     pub now_playing: Signal<Option<MediaSession>>,

@@ -1,4 +1,4 @@
-use crate::components::{MemoryPane, NavigationBar, NowPlayingPane, TimelinePane};
+use crate::components::{ExplorePane, MemoryPane, NavigationBar};
 use crate::state::{self, AppContext, FeedItem, FeedSourceKind, NavSection, ThemeMode};
 use crate::storage;
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -16,9 +16,21 @@ const BASE_STYLES: &str = r#"
 .umbreon-shell {
   height: 100vh;
   display: flex;
+  flex-direction: column;
   background: var(--md-sys-color-background);
   color: var(--md-sys-color-on-background);
   overflow: hidden;
+}
+
+.umbreon-header {
+  padding: 16px 18px 10px;
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+  background: var(--md-sys-color-background);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .umbreon-shell.theme-dark {
@@ -36,17 +48,17 @@ const BASE_STYLES: &str = r#"
 }
 
 .umbreon-shell.theme-light {
-  --md-sys-color-background: #f8f9fc;
+  --md-sys-color-background: #f2f2f7;
   --md-sys-color-surface: #ffffff;
-  --md-sys-color-surface-container: #f1f3f8;
-  --md-sys-color-surface-container-high: #e8ecf3;
-  --md-sys-color-outline: #c4c7cf;
-  --md-sys-color-outline-variant: #e2e6ee;
-  --md-sys-color-primary: #2f5cc8;
+  --md-sys-color-surface-container: #eef0f4;
+  --md-sys-color-surface-container-high: #e7ebf3;
+  --md-sys-color-outline: #d7dbe4;
+  --md-sys-color-outline-variant: #e6e9f0;
+  --md-sys-color-primary: #2b63ff;
   --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-secondary: #566071;
-  --md-sys-color-on-surface: #1b1f24;
-  --md-sys-color-on-surface-variant: #4f5b6b;
+  --md-sys-color-secondary: #657189;
+  --md-sys-color-on-surface: #1c1c1e;
+  --md-sys-color-on-surface-variant: #6b7280;
 }
 
 .umbreon-sidebar {
@@ -224,13 +236,59 @@ const BASE_STYLES: &str = r#"
 
 .umbreon-content {
   flex: 1;
-  padding: 32px;
+  padding: 8px 16px 88px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
   min-width: 0;
-  height: 100vh;
   overflow: hidden;
+  background: var(--md-sys-color-background);
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--md-sys-color-surface);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 8px 12px 18px;
+  gap: 8px;
+  z-index: 20;
+  box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.umbreon-shell.theme-dark .bottom-nav {
+  background: rgba(23, 27, 32, 0.95);
+}
+
+.bottom-nav-btn {
+  border: none;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  min-width: 64px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.bottom-nav-btn .material-icons {
+  font-size: 22px;
+}
+
+.bottom-nav-btn.active {
+  background: rgba(43, 99, 255, 0.14);
+  color: var(--md-sys-color-primary);
 }
 
 .now-playing .stream,
@@ -301,12 +359,91 @@ const BASE_STYLES: &str = r#"
 .timeline-pane {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-right: 6px;
+  gap: 14px;
   width: 100%;
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
+}
+
+.explore-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.explore-subheader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.explore-back {
+  border: none;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.explore-card {
+  background: var(--md-sys-color-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 18px;
+  padding: 6px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.explore-item {
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 12px;
+  border-radius: 16px;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--md-sys-color-on-surface);
+}
+
+.explore-item:hover {
+  background: var(--md-sys-color-surface-container);
+}
+
+.explore-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--md-sys-color-surface-container);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 22px;
+  line-height: 44px;
+}
+
+.explore-icon.material-icons {
+  line-height: 44px;
+}
+
+.explore-label {
+  font-weight: 600;
+}
+
+.explore-chevron {
+  margin-left: auto;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .timeline-pane > * {
@@ -318,21 +455,36 @@ const BASE_STYLES: &str = r#"
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  padding: 18px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--md-sys-color-outline-variant);
   background-color: var(--md-sys-color-surface);
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   width: 100%;
+  max-height: 25vh;
+  overflow: hidden;
+  box-sizing: border-box;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
+}
+
+.feed-card .post-body {
+  max-height: calc(25vh - 36px);
+  overflow: hidden;
+}
+
+.feed-card .post-text {
+  max-height: calc(25vh - 140px);
   overflow: hidden;
 }
 
 .feed-card:hover {
-  background-color: var(--md-sys-color-surface-container);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.12);
 }
 
-.feed-card:last-child {
-  border-bottom: none;
+.feed-card--marked {
+  border-color: #f4a6c5;
 }
 
 .post-avatar {
@@ -346,6 +498,10 @@ const BASE_STYLES: &str = r#"
   justify-content: center;
   font-weight: 600;
   overflow: hidden;
+}
+
+.post-avatar-fallback {
+  font-size: 18px;
 }
 
 .post-avatar-img {
@@ -418,14 +574,7 @@ const BASE_STYLES: &str = r#"
 }
 
 .post-text::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 32px;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), var(--md-sys-color-surface));
-  pointer-events: none;
+  display: none;
 }
 
 .post-text * {
@@ -445,7 +594,8 @@ const BASE_STYLES: &str = r#"
   padding: 10px 12px;
   border-radius: 10px;
   background: var(--md-sys-color-surface-container);
-  overflow-x: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
   font-size: 12px;
 }
 
@@ -488,6 +638,15 @@ const BASE_STYLES: &str = r#"
 
 .post-action:hover {
   background: var(--md-sys-color-surface-container-high);
+}
+
+.post-action--marked {
+  background: #f7c5d9;
+  color: #a4004c;
+}
+
+.post-action--marked:hover {
+  background: #f4b6cf;
 }
 
 .material-icons {
@@ -844,9 +1003,8 @@ pub fn AppRoot() -> Element {
         cached_feed_items
     };
 
-    let nav = use_signal(|| NavSection::Timeline);
+    let nav = use_signal(|| NavSection::Explore);
     let theme = use_signal(|| initial_theme);
-    let sidebar_collapsed = use_signal(|| false);
     let feed_items = use_signal(|| initial_feed_items);
     let live_streams = use_signal(state::mock_live_streams);
     let now_playing = use_signal(state::mock_initial_session);
@@ -858,7 +1016,6 @@ pub fn AppRoot() -> Element {
     let ctx_seed = AppContext {
         nav,
         theme,
-        sidebar_collapsed,
         feed_items,
         live_streams,
         now_playing,
@@ -877,6 +1034,12 @@ pub fn AppRoot() -> Element {
     let theme_class = match *ctx.theme.read() {
         ThemeMode::Dark => "theme-dark",
         ThemeMode::Light => "theme-light",
+    };
+    let header_title = match active_nav {
+        NavSection::Dialogue => "对话",
+        NavSection::Explore => "探索",
+        NavSection::Memory => "记忆",
+        NavSection::Settings => "设置",
     };
 
     let mut feed_server_url = ctx.feed_server_url;
@@ -903,12 +1066,16 @@ pub fn AppRoot() -> Element {
         }
         style { "{BASE_STYLES}" }
         main { class: "umbreon-shell {theme_class}",
-            NavigationBar {}
+            header { class: "umbreon-header", "{header_title}" }
             section { class: "umbreon-content",
                 match active_nav {
-                    NavSection::Timeline => rsx!(TimelinePane {}),
-                    NavSection::Live => rsx!(NowPlayingPane { mode: state::MediaKind::Live }),
-                    NavSection::Vod => rsx!(NowPlayingPane { mode: state::MediaKind::Vod }),
+                    NavSection::Dialogue => rsx!(
+                        div { class: "settings-pane",
+                            h2 { "对话" }
+                            p { "对话列表还在路上。" }
+                        }
+                    ),
+                    NavSection::Explore => rsx!(ExplorePane {}),
                     NavSection::Memory => rsx!(MemoryPane {}),
                     NavSection::Settings => rsx!(
                         div { class: "settings-pane",
@@ -981,6 +1148,7 @@ pub fn AppRoot() -> Element {
                     ),
                 }
             }
+            NavigationBar {}
         }
     }
 }

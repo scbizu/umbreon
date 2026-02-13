@@ -154,9 +154,6 @@ fn render_virtual_timeline(
                 }
                 div { class: "timeline-spacer", style: "height: {bottom_spacer}px" }
             }
-            div { class: "timeline-footer",
-                span { "Showing {end} / {total} feeds" }
-            }
         }
     }
 }
@@ -196,9 +193,6 @@ fn render_paginated_timeline(
                     }
                 }
             }
-            div { class: "timeline-footer",
-                span { "Loaded {visible.read()} / {total} feeds" }
-            }
         }
     }
 }
@@ -211,6 +205,13 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
         FeedSourceKind::Custom => "Crawler",
     };
 
+    let mut forged = use_signal(|| false);
+    let card_class = if *forged.read() {
+        "feed-card feed-card--marked"
+    } else {
+        "feed-card"
+    };
+
     let card_item = item.clone();
     let fallback = item.author.chars().next().unwrap_or('?');
     let host: String = Url::parse(item.link.as_str())
@@ -221,7 +222,7 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
     let stamp = stacklang_stamp(&item.tags);
     rsx! {
         article {
-            class: "feed-card",
+            class: "{card_class}",
             key: "{item.id}",
             onclick: move |_| {
                 on_open.call(card_item.clone());
@@ -259,13 +260,15 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
                         onclick: move |evt| {
                             evt.stop_propagation();
                         },
-                        span { class: "material-icons", "open_in_new" }
-                        span { "唤魂" }
+                        span { class: "material-icons", "add_comment" }
+                        span { "评论" }
                     }
                     button {
-                        class: "post-action",
+                        class: if *forged.read() { "post-action post-action--marked" } else { "post-action" },
                         onclick: move |evt| {
                             evt.stop_propagation();
+                            let next = !*forged.read();
+                            forged.set(next);
                             info!("add to memory: {}", item.id);
                         },
                         span { class: "material-icons", "bookmark_add" }
