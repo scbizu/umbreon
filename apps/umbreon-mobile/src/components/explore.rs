@@ -19,13 +19,13 @@ pub fn ExplorePane() -> Element {
     let current = *view.read();
     let ctx = use_app_context();
     let feed_items = ctx.feed_items;
+    let llm_endpoint = ctx.llm_endpoint;
+    let llm_api_key = ctx.llm_api_key;
+    let llm_model = ctx.llm_model;
     let feed_server_url = ctx.feed_server_url;
     let settings_status = ctx.settings_status;
-    let is_syncing = settings_status
-        .read()
-        .as_deref()
-        .map(|status| status == "Syncing feeds...")
-        .unwrap_or(false);
+    let feed_syncing = ctx.feed_syncing;
+    let is_syncing = *feed_syncing.read();
 
     rsx! {
         section { class: "explore-pane",
@@ -48,7 +48,15 @@ pub fn ExplorePane() -> Element {
                                     return;
                                 }
                                 let url = feed_server_url.read().trim().to_string();
-                                trigger_feed_sync(url, feed_items.clone(), settings_status.clone());
+                                trigger_feed_sync(
+                                    url,
+                                    feed_items.clone(),
+                                    settings_status.clone(),
+                                    feed_syncing.clone(),
+                                    llm_endpoint.clone(),
+                                    llm_api_key.clone(),
+                                    llm_model.clone(),
+                                );
                             },
                             span { class: "material-icons", "refresh" }
                         }

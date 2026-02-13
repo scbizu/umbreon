@@ -416,7 +416,8 @@ pub const BASE_STYLES: &str = r#"
 }
 
 .settings-action.is-loading .material-icons,
-.settings-action-icon.is-loading .material-icons {
+.settings-action-icon.is-loading .material-icons,
+.settings-sync.is-loading .material-icons {
   animation: spin 1s linear infinite;
 }
 
@@ -611,6 +612,22 @@ pub const BASE_STYLES: &str = r#"
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
 }
 
+.feed-summary-indicator {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 18px;
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container);
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.1);
+}
+
+.feed-card--summarized .feed-lang-badge {
+  margin-right: 36px;
+}
+
 .feed-card .post-body {
   max-height: calc(25vh - 36px);
   overflow: hidden;
@@ -673,6 +690,7 @@ pub const BASE_STYLES: &str = r#"
 
 .feed-lang-badge {
   margin-left: auto;
+  margin-right: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;

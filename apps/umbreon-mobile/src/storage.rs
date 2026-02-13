@@ -14,6 +14,7 @@ pub struct StoredSettings {
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use super::{FeedItem, FeedSourceKind, StoredSettings, ThemeMode};
+    use chrono::{FixedOffset, TimeZone};
     use rusqlite::{Connection, params};
     use std::path::PathBuf;
 
@@ -39,9 +40,11 @@ mod imp {
     fn open_db() -> Result<Connection, rusqlite::Error> {
         let conn = Connection::open(db_path())?;
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS settings (\n                key TEXT PRIMARY KEY,\n                value TEXT NOT NULL\n            );\n            CREATE TABLE IF NOT EXISTS feeds (\n                id TEXT PRIMARY KEY,\n                title TEXT NOT NULL,\n                summary TEXT NOT NULL,\n                source TEXT NOT NULL,\n                published_at TEXT NOT NULL,\n                published_ts INTEGER NOT NULL,\n                link TEXT NOT NULL,\n                author TEXT NOT NULL,\n                avatar_url TEXT,\n                tags TEXT\n            );",
+            "CREATE TABLE IF NOT EXISTS settings (\n                key TEXT PRIMARY KEY,\n                value TEXT NOT NULL\n            );\n            CREATE TABLE IF NOT EXISTS feeds (\n                id TEXT PRIMARY KEY,\n                title TEXT NOT NULL,\n                summary TEXT NOT NULL,\n                full_content TEXT NOT NULL,\n                summarized INTEGER NOT NULL DEFAULT 0,\n                source TEXT NOT NULL,\n                published_at TEXT NOT NULL,\n                published_ts INTEGER NOT NULL,\n                link TEXT NOT NULL,\n                author TEXT NOT NULL,\n                avatar_url TEXT,\n                tags TEXT\n            );",
         )?;
         let _ = conn.execute("ALTER TABLE feeds ADD COLUMN tags TEXT", []);
+        let _ = conn.execute("ALTER TABLE feeds ADD COLUMN full_content TEXT", []);
+        let _ = conn.execute("ALTER TABLE feeds ADD COLUMN summarized INTEGER", []);
         Ok(conn)
     }
 
@@ -90,6 +93,14 @@ mod imp {
             "custom" => FeedSourceKind::Custom,
             _ => FeedSourceKind::Atom,
         }
+    }
+
+    fn format_date_utc8(ts: i64) -> Option<String> {
+        let offset = FixedOffset::east_opt(8 * 3600)?;
+        offset
+            .timestamp_opt(ts, 0)
+            .single()
+            .map(|dt| dt.format("%Y-%m-%d").to_string())
     }
 
     pub fn load_settings() -> StoredSettings {
@@ -182,29 +193,36 @@ mod imp {
             return Vec::new();
         };
         let Ok(mut stmt) = conn.prepare(
-            "SELECT id, title, summary, source, published_at, published_ts, link, author, avatar_url, tags\n            FROM feeds\n            ORDER BY published_ts DESC",
+            "SELECT id, title, summary, full_content, summarized, source, published_at, published_ts, link, author, avatar_url, tags\n            FROM feeds\n            ORDER BY published_ts DESC",
         ) else {
             return Vec::new();
         };
         let Ok(rows) = stmt.query_map([], |row| {
-            let source: String = row.get(3)?;
-            let tags_raw: Option<String> = row.get(9)?;
+            let source: String = row.get(5)?;
+            let tags_raw: Option<String> = row.get(11)?;
             let tags = tags_raw
                 .unwrap_or_default()
                 .split(',')
                 .map(|tag| tag.trim().to_string())
                 .filter(|tag| !tag.is_empty())
                 .collect::<Vec<_>>();
+            let summary: String = row.get(2)?;
+            let full_content: Option<String> = row.get(3)?;
+            let summarized: i64 = row.get(4)?;
+            let published_ts: i64 = row.get(7)?;
+            let published_at_raw: String = row.get(6)?;
             Ok(FeedItem {
                 id: row.get(0)?,
                 title: row.get(1)?,
-                summary: row.get(2)?,
+                summary: summary.clone(),
+                full_content: full_content.unwrap_or(summary),
+                summarized: summarized != 0,
                 source: source_from_value(&source),
-                published_at: row.get(4)?,
-                published_ts: row.get(5)?,
-                link: row.get(6)?,
-                author: row.get(7)?,
-                avatar_url: row.get(8)?,
+                published_at: format_date_utc8(published_ts).unwrap_or(published_at_raw),
+                published_ts,
+                link: row.get(8)?,
+                author: row.get(9)?,
+                avatar_url: row.get(10)?,
                 tags,
             })
         }) else {
@@ -223,7 +241,7 @@ mod imp {
         {
             let mut stmt = tx
                 .prepare(
-                    "INSERT INTO feeds (id, title, summary, source, published_at, published_ts, link, author, avatar_url, tags)\n                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    "INSERT INTO feeds (id, title, summary, full_content, summarized, source, published_at, published_ts, link, author, avatar_url, tags)\n                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 )
                 .map_err(|err| format!("prepare insert failed: {err}"))?;
             for item in items {
@@ -232,6 +250,8 @@ mod imp {
                     item.id,
                     item.title,
                     item.summary,
+                    item.full_content,
+                    if item.summarized { 1 } else { 0 },
                     source_to_value(&item.source),
                     item.published_at,
                     item.published_ts,

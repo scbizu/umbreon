@@ -18,12 +18,14 @@ pub fn SettingsPane() -> Element {
     let mut theme = ctx.theme;
     let mode = *theme.read();
     let feed_items = ctx.feed_items;
+    let feed_syncing = ctx.feed_syncing;
     let can_fetch_models =
         !llm_endpoint.read().trim().is_empty() && !llm_api_key.read().trim().is_empty();
     let can_test = can_fetch_models && !llm_model.read().trim().is_empty();
     let has_models = !llm_models.read().is_empty();
     let mut is_fetching_models = use_signal(|| false);
     let mut is_testing_model = use_signal(|| false);
+    let syncing_feeds = *feed_syncing.read();
     let fetching_models = *is_fetching_models.read();
     let testing_model = *is_testing_model.read();
 
@@ -44,13 +46,29 @@ pub fn SettingsPane() -> Element {
                         }
                     }
                     button {
-                        class: "settings-sync settings-sync-icon",
+                        class: if syncing_feeds {
+                            "settings-sync settings-sync-icon is-loading"
+                        } else {
+                            "settings-sync settings-sync-icon"
+                        },
+                        disabled: syncing_feeds,
                         onclick: move |_| {
+                            if *feed_syncing.read() {
+                                return;
+                            }
                             let url = feed_server_url.read().trim().to_string();
                             let memory_url = memory_server_url.read().trim().to_string();
                             storage::store_feed_server_url(&url);
                             storage::store_memory_server_url(&memory_url);
-                            timeline::trigger_feed_sync(url, feed_items.clone(), settings_status.clone());
+                            timeline::trigger_feed_sync(
+                                url,
+                                feed_items.clone(),
+                                settings_status.clone(),
+                                feed_syncing.clone(),
+                                llm_endpoint.clone(),
+                                llm_api_key.clone(),
+                                llm_model.clone(),
+                            );
                         },
                         span { class: "material-icons", "sync" }
                     }

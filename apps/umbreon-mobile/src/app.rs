@@ -49,6 +49,7 @@ pub fn AppRoot() -> Element {
     let memory_panel = use_signal(state::mock_memory_panel);
     let feed_server_url = use_signal(|| initial_feed_server_url);
     let memory_server_url = use_signal(|| initial_memory_server_url);
+    let feed_syncing = use_signal(|| false);
     let llm_endpoint = use_signal(|| initial_llm_endpoint);
     let llm_api_key = use_signal(|| initial_llm_api_key);
     let llm_model = use_signal(|| initial_llm_model);
@@ -65,6 +66,7 @@ pub fn AppRoot() -> Element {
         memory_panel,
         feed_server_url,
         memory_server_url,
+        feed_syncing,
         llm_endpoint,
         llm_api_key,
         llm_model,
@@ -93,6 +95,10 @@ pub fn AppRoot() -> Element {
     let feed_server_url = ctx.feed_server_url;
     let settings_status = ctx.settings_status;
     let feed_items = ctx.feed_items;
+    let feed_syncing = ctx.feed_syncing;
+    let llm_endpoint = ctx.llm_endpoint;
+    let llm_api_key = ctx.llm_api_key;
+    let llm_model = ctx.llm_model;
     let mut auto_sync_once = use_signal(|| false);
 
     use_effect(move || {
@@ -101,7 +107,15 @@ pub fn AppRoot() -> Element {
         }
         *auto_sync_once.write() = true;
         let url = feed_server_url.read().trim().to_string();
-        timeline::trigger_feed_sync(url, feed_items.clone(), settings_status.clone());
+        timeline::trigger_feed_sync(
+            url,
+            feed_items.clone(),
+            settings_status.clone(),
+            feed_syncing.clone(),
+            llm_endpoint.clone(),
+            llm_api_key.clone(),
+            llm_model.clone(),
+        );
     });
 
     let toast_class = ctx

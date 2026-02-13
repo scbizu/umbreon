@@ -75,3 +75,21 @@ pub async fn test_chat(
 
     Ok(text)
 }
+
+pub async fn summarize_text(
+    endpoint: &str,
+    api_key: &str,
+    model: &str,
+    title: &str,
+    body: &str,
+) -> Result<String, String> {
+    let instruction = "请用1-2句中文总结以下内容，要求简洁、客观，不要列表，不要引用。";
+    let prompt = format!(
+        "{instruction}\n标题：{title}\n正文：{body}",
+        instruction = instruction,
+        title = title.trim(),
+        body = body.trim()
+    );
+
+    test_chat(endpoint, api_key, model, &prompt).await
+}

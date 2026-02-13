@@ -1,6 +1,8 @@
+use crate::general_ai_client;
 use crate::helper;
 use crate::state::{self, FeedItem, FeedSourceKind};
 use crate::storage;
+use chrono::{FixedOffset, TimeZone};
 use dioxus::prelude::*;
 use feed_rs::model::FeedType;
 
@@ -62,6 +64,47 @@ fn parse_feed_with_fallback(feed_bytes: &[u8]) -> Result<feed_rs::model::Feed, S
     }
 
     Err("unable to parse feed: no xml content".to_string())
+}
+
+fn plain_text_from_html(input: &str) -> String {
+    let mut output = String::new();
+    let mut in_tag = false;
+    for ch in input.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ => {
+                if !in_tag {
+                    output.push(ch);
+                }
+            }
+        }
+    }
+    output
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
+}
+
+fn fallback_summary(text: &str) -> String {
+    let max_len = 140usize;
+    let mut trimmed = text.chars().take(max_len).collect::<String>();
+    if text.chars().count() > max_len {
+        trimmed.push('…');
+    }
+    trimmed
+}
+
+fn format_date_utc8(ts: i64) -> String {
+    let offset = FixedOffset::east_opt(8 * 3600)
+        .unwrap_or_else(|| FixedOffset::east_opt(0).expect("valid UTC offset"));
+    offset
+        .timestamp_opt(ts, 0)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| "1970-01-01".to_string())
 }
 
 pub async fn load_feeds_from_server(url: &str) -> Result<Vec<FeedItem>, String> {
@@ -146,6 +189,7 @@ pub async fn load_feeds_from_server(url: &str) -> Result<Vec<FeedItem>, String> 
                     }
                 )
             })?;
+        let published_at = format_date_utc8(published_ts);
         let link = entry
             .links
             .first()
@@ -177,7 +221,9 @@ pub async fn load_feeds_from_server(url: &str) -> Result<Vec<FeedItem>, String> 
         items.push(FeedItem {
             id,
             title,
-            summary,
+            summary: summary.clone(),
+            full_content: summary,
+            summarized: false,
             source,
             published_at,
             published_ts,
@@ -201,15 +247,105 @@ pub fn trigger_feed_sync(
     url: String,
     mut feed_items: Signal<Vec<FeedItem>>,
     mut settings_status: Signal<Option<String>>,
+    mut feed_syncing: Signal<bool>,
+    llm_endpoint: Signal<String>,
+    llm_api_key: Signal<String>,
+    llm_model: Signal<String>,
 ) {
     if url.is_empty() {
         *settings_status.write() = Some("Please enter a Feed Server URL.".to_string());
         return;
     }
+    *feed_syncing.write() = true;
     *settings_status.write() = Some("Syncing feeds...".to_string());
     spawn(async move {
         match load_feeds_from_server(&url).await {
             Ok(items) => {
+                let endpoint = llm_endpoint.read().trim().to_string();
+                let api_key = llm_api_key.read().trim().to_string();
+                let model = llm_model.read().trim().to_string();
+                let mut items = items;
+                if !endpoint.is_empty() && !api_key.is_empty() && !model.is_empty() {
+                    let total = items.len();
+                    let mut done = 0usize;
+                    let mut pending = Vec::new();
+                    for (index, item) in items.iter_mut().enumerate() {
+                        if item.summarized {
+                            continue;
+                        }
+                        let body_text = plain_text_from_html(&item.full_content);
+                        let fallback = if body_text.is_empty() {
+                            fallback_summary(&item.summary)
+                        } else {
+                            fallback_summary(&body_text)
+                        };
+                        pending.push((index, body_text, fallback));
+                    }
+
+                    let mut offset = 0usize;
+                    while offset < pending.len() {
+                        let batch_end = (offset + 20).min(pending.len());
+                        let chunk = &pending[offset..batch_end];
+                        let mut chunk_offset = 0usize;
+                        while chunk_offset < chunk.len() {
+                            let group_end = (chunk_offset + 5).min(chunk.len());
+                            let group = &chunk[chunk_offset..group_end];
+
+                            let mut futures = Vec::with_capacity(group.len());
+                            for (index, body_text, fallback) in group.iter() {
+                                done += 1;
+                                *settings_status.write() =
+                                    Some(format!("正在生成摘要 {}/{}...", done, total));
+                                let title = items[*index].title.clone();
+                                let content = if body_text.is_empty() {
+                                    items[*index].summary.clone()
+                                } else {
+                                    body_text.clone()
+                                };
+                                let fallback = fallback.clone();
+                                let endpoint = endpoint.clone();
+                                let api_key = api_key.clone();
+                                let model = model.clone();
+                                futures.push(async move {
+                                    let result = general_ai_client::summarize_text(
+                                        &endpoint, &api_key, &model, &title, &content,
+                                    )
+                                    .await;
+                                    (result, fallback)
+                                });
+                            }
+
+                            let results = futures::future::join_all(futures).await;
+                            for ((index, _body_text, _fallback), (result, fallback)) in
+                                group.iter().zip(results.into_iter())
+                            {
+                                let item = &mut items[*index];
+                                match result {
+                                    Ok(summary) => {
+                                        let cleaned = ammonia::Builder::default()
+                                            .add_tags(["p", "br"])
+                                            .clean(&summary)
+                                            .to_string();
+                                        if cleaned.trim().is_empty() {
+                                            item.summary = fallback;
+                                            item.summarized = false;
+                                        } else {
+                                            item.summary = cleaned;
+                                            item.summarized = true;
+                                        }
+                                    }
+                                    Err(_) => {
+                                        item.summary = fallback;
+                                        item.summarized = false;
+                                    }
+                                }
+                            }
+
+                            chunk_offset = group_end;
+                        }
+                        offset = batch_end;
+                    }
+                }
                 let mut status = "Feeds updated.".to_string();
                 if let Err(err) = storage::store_feed_items(&items) {
                     status = format!("Feeds updated, but cache failed: {err}");
@@ -221,5 +357,6 @@ pub fn trigger_feed_sync(
                 *settings_status.write() = Some(err);
             }
         }
+        *feed_syncing.write() = false;
     });
 }

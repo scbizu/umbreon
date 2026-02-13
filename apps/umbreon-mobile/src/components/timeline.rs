@@ -206,10 +206,10 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
     };
 
     let mut forged = use_signal(|| false);
-    let card_class = if *forged.read() {
-        "feed-card feed-card--marked"
+    let mut card_class = if *forged.read() {
+        "feed-card feed-card--marked".to_string()
     } else {
-        "feed-card"
+        "feed-card".to_string()
     };
 
     let card_item = item.clone();
@@ -220,6 +220,11 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
         .unwrap_or_else(|| "source".to_string());
 
     let stamp = stacklang_stamp(&item.tags);
+    let is_summarized = item.summarized;
+    if is_summarized {
+        card_class.push_str(" feed-card--summarized");
+    }
+    let summary_class = "feed-summary-indicator material-icons";
     rsx! {
         article {
             class: "{card_class}",
@@ -227,6 +232,9 @@ fn FeedCard(item: FeedItem, on_open: EventHandler<FeedItem>) -> Element {
             onclick: move |_| {
                 on_open.call(card_item.clone());
             },
+            if is_summarized {
+                span { class: "{summary_class}", "visibility" }
+            }
             div { class: "post-avatar",
                 span { class: "post-avatar-fallback", "{fallback}" }
             }
@@ -303,7 +311,7 @@ fn FeedModal(item: FeedItem, on_close: EventHandler<()>) -> Element {
                         "Close"
                     }
                 }
-                div { class: "feed-modal-summary", dangerous_inner_html: "{item.summary}" }
+                div { class: "feed-modal-summary", dangerous_inner_html: "{item.full_content}" }
                 div { class: "feed-modal-meta",
                     span { "Published: {item.published_at}" }
                     span { "Source: {item.source:?}" }
